@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project outputs
+output/*.png
+output/*.jpg
+
+# LoRA weights (too large for git)
+loras/character/*.safetensors
+loras/style/*.safetensors
+
+# Logs
+tests/test.log
+
+# Misc
+*.log
+.env

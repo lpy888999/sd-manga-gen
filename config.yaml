@@ -1,0 +1,58 @@
+# ============================================================
+#  SDXL Manga Generation Pipeline — Configuration
+# ============================================================
+
+# --- LLM Settings ---
+llm:
+  model_name: "qwen3-coder-next:cloud"     # Ollama model for text tasks
+  vision_model_name: "gemma3:12b-cloud"           # Multimodal model for character extraction
+  temperature: 0.7
+
+# --- Stable Diffusion Settings ---
+sd:
+  # Base model — accepts a HuggingFace model ID or a local path
+  model_path: "stabilityai/stable-diffusion-xl-base-1.0"
+  # model_path: "/path/to/local/sdxl-model"
+
+  # LoRA weights — just drop .safetensors files into these directories
+  # The pipeline will auto-load every .safetensors found in each folder.
+  lora:
+    # Character LoRA — keeps the protagonist consistent across panels
+    character:
+      dir: "loras/character"        # folder containing <name>.safetensors
+      weight: 0.8                   # adapter strength
+
+    # Style LoRA — locks the global art style (manga / comic / etc.)
+    style:
+      dir: "loras/style"
+      weight: 0.6
+
+    # (optional) extra trigger words injected into every prompt
+    trigger_words: []               # e.g. ["manga style", "thick lineart"]
+
+  # Generation parameters
+  guidance_scale: 7.5
+  num_inference_steps: 30
+  seed: null                        # null = random each run
+
+# --- Panel / Layout Settings ---
+panels:
+  auto_threshold: 30        # word-count threshold: ≤30 → 4 panels, >30 → 6
+  default_count: 4           # fallback when auto-detection is disabled
+
+layout:
+  # Per-panel resolution (width × height) fed to SD
+  panel_size:
+    width: 768
+    height: 512
+  # Comic page assembly
+  border_width: 6            # px, thick black panel borders
+  gutter: 12                 # px, spacing between panels
+  background_color: "white"
+
+# --- Prompt Engineering ---
+prompt:
+  # Global quality tags appended to every SD prompt
+  quality_suffix: "masterpiece, best quality, high resolution, comic style, thick lineart"
+  # Negative prompt shared across all panels
+  negative_prompt: "low quality, blurry, distorted face, extra fingers, bad anatomy, watermark, text, signature"

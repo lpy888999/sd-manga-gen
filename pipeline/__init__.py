@@ -1,0 +1,1 @@
+# SDXL Manga Generation Pipeline
