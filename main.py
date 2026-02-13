@@ -98,6 +98,11 @@ Examples:
         action="store_true",
         help="Enable debug-level logging",
     )
+    parser.add_argument(
+        "--audio",
+        action="store_true",
+        help="Enable TTS audio generation (requires Coqui TTS)",
+    )
 
     return parser.parse_args()
 
@@ -150,9 +155,12 @@ def main():
         panel_count=args.panels,
         output_path=args.output,
         seed=args.seed,
+        enable_audio=args.audio,
     )
 
-    log.info(f"✅ Comic saved to: {output}")
+    log.info(f"\u2705 Comic saved to: {output['comic_path']}")
+    if output.get("audio"):
+        log.info(f"\U0001f50a Audio files: {output['audio']['audio_dir']}")
 
 
 if __name__ == "__main__":

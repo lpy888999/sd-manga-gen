@@ -33,6 +33,8 @@ from pipeline.story_expander import StoryExpander
 from pipeline.prompt_engineer import PromptEngineer, PanelPrompt
 from pipeline.sd_generator import SDGenerator, LoRAConfig
 from pipeline.layout_composer import LayoutComposer
+from pipeline.script_generator import ScriptGenerator
+from pipeline.audio_engine import AudioEngine
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,7 @@ class MangaPipeline:
         layout_cfg = config.get("layout", {})
         prompt_cfg = config.get("prompt", {})
         panel_cfg = config.get("panels", {})
+        tts_cfg = config.get("tts", {})
 
         # ── Build sub-components ─────────────────────────────────────
         self.extractor = CharacterExtractor(
@@ -94,6 +97,23 @@ class MangaPipeline:
             background_color=layout_cfg.get("background_color", "white"),
         )
 
+        # ── TTS modules (optional) ───────────────────────────────────
+        self.tts_enabled = tts_cfg.get("enabled", False)
+        if self.tts_enabled:
+            # Script LLM can be separate from main LLM
+            script_model = (
+                tts_cfg.get("script_model_name")
+                or llm_cfg.get("model_name", "qwen3-coder-next:cloud")
+            )
+            self.script_generator = ScriptGenerator(
+                model_name=script_model,
+                temperature=tts_cfg.get("script_temperature", 0.5),
+            )
+            self.audio_engine = AudioEngine.from_config(tts_cfg)
+        else:
+            self.script_generator = None
+            self.audio_engine = None
+
         self.auto_threshold = panel_cfg.get("auto_threshold", 30)
         self.default_panel_count = panel_cfg.get("default_count", 4)
 
@@ -120,7 +140,8 @@ class MangaPipeline:
         panel_count: Optional[int] = None,
         output_path: str = "output/comic.png",
         seed: Optional[int] = None,
-    ) -> str:
+        enable_audio: Optional[bool] = None,
+    ) -> Dict[str, Any]:
         """
         Run the full manga generation pipeline.
 
@@ -138,13 +159,16 @@ class MangaPipeline:
             Where to save the final comic.
         seed : int | None
             Override seed from config.
+        enable_audio : bool | None
+            Override tts.enabled from config.  None = use config.
 
         Returns
         -------
-        str
-            Path to the saved comic image.
+        dict
+            ``{"comic_path": str, "audio": dict | None}``
         """
         t0 = time.time()
+        do_audio = enable_audio if enable_audio is not None else self.tts_enabled
 
         # ── Step 0: Character feature extraction ─────────────────────
         if character_tags:
@@ -182,6 +206,21 @@ class MangaPipeline:
         for pp in panel_prompts:
             logger.info(f"  Panel {pp.panel_number}: {pp.final_prompt[:120]}…")
 
+        # ── Step 2.5: Script extraction (TTS) ────────────────────────
+        audio_result = None
+        if do_audio and self.script_generator:
+            logger.info("=" * 60)
+            logger.info("STEP 2.5 · Script Extraction (TTS)")
+            logger.info("=" * 60)
+            scripts = self.script_generator.generate(panels)
+
+            # ── Step 2.6: Audio synthesis ─────────────────────────────
+            if self.audio_engine:
+                logger.info("=" * 60)
+                logger.info("STEP 2.6 · Audio Synthesis (Coqui TTS)")
+                logger.info("=" * 60)
+                audio_result = self.audio_engine.synthesize(scripts)
+
         # ── Step 3: Image generation ─────────────────────────────────
         logger.info("=" * 60)
         logger.info("STEP 3 · Image Generation (SD + LoRA)")
@@ -200,7 +239,10 @@ class MangaPipeline:
         elapsed = time.time() - t0
         logger.info(f"✅ Pipeline complete in {elapsed:.1f}s — saved to {output_path}")
 
-        return output_path
+        return {
+            "comic_path": output_path,
+            "audio": audio_result,
+        }
 
     # ── helpers ──────────────────────────────────────────────────────
     @staticmethod

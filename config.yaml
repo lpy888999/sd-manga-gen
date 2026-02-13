@@ -28,7 +28,7 @@ sd:
       weight: 0.6
 
     # (optional) extra trigger words injected into every prompt
-    trigger_words: []               # e.g. ["manga style", "thick lineart"]
+    trigger_words: ["manga style"]               # e.g. ["manga style", "thick lineart"]
 
   # Generation parameters
   guidance_scale: 7.5
@@ -56,3 +56,26 @@ prompt:
   quality_suffix: "masterpiece, best quality, high resolution, comic style, thick lineart"
   # Negative prompt shared across all panels
   negative_prompt: "low quality, blurry, distorted face, extra fingers, bad anatomy, watermark, text, signature"
+
+
+
+# --- TTS / Audio Settings ---
+tts:
+  enabled: true
+
+  # LLM for script extraction (can differ from main llm.model_name)
+  # Set to null or omit to reuse the main llm.model_name
+  script_model_name: qwen3-coder-next:cloud
+  script_temperature: 0.5
+
+  # Coqui TTS model
+  model: "tts_models/en/vctk/vits"   # or xtts_v2 for multilingual
+
+  # Voice assignment pool (VCTK speaker IDs)
+  voices:
+    narrator: "p230"
+    male_pool: ["p232", "p243", "p245", "p246"]
+    female_pool: ["p229", "p231", "p234", "p236"]
+
+  output_dir: "output/audio"
+

@@ -5,6 +5,8 @@ LLM Pipeline Test — Validate all text stages before diffusion
 Tests Steps 0–2 (Character Extraction → Story Expansion → Prompt Engineering)
 WITHOUT running Stable Diffusion.  Requires only Ollama running locally.
 
+Optional ``--test-tts`` flag also tests Step 2.5 (Script Extraction).
+
 Usage::
 
     python tests/test_llm_pipeline.py                    # default settings
@@ -215,6 +217,60 @@ def test_prompt_engineering(config: dict, panels: list[str], character_tags: str
     print(json.dumps(json_out, ensure_ascii=False, indent=2))
 
 
+# ═══════════════════════════════════════════════════════════════════
+#  STEP 2.5 · Script Extraction (TTS)
+# ═══════════════════════════════════════════════════════════════════
+def test_script_extraction(config: dict, panels: list[str]):
+    divider("STEP 2.5 · Script Extraction (TTS)")
+
+    llm_cfg = config.get("llm", {})
+    tts_cfg = config.get("tts", {})
+
+    from pipeline.script_generator import ScriptGenerator
+
+    # Use TTS-specific model if configured, else fallback to main LLM
+    script_model = (
+        tts_cfg.get("script_model_name")
+        or llm_cfg.get("model_name", "qwen3-coder-next:cloud")
+    )
+    script_temp = tts_cfg.get("script_temperature", 0.5)
+
+    generator = ScriptGenerator(
+        model_name=script_model,
+        temperature=script_temp,
+    )
+
+    print(f"  🤖 Script model: {script_model} (temp={script_temp})")
+    print(f"  📄 Panels: {len(panels)}")
+    print()
+
+    t0 = time.time()
+    scripts = generator.generate(panels)
+    elapsed = time.time() - t0
+
+    print(f"  ✅ Extracted scripts for {len(scripts)} panels ({elapsed:.1f}s):")
+    for ps in scripts:
+        print(f"\n  ┌─ Panel {ps.panel} ────────────────────────────────────")
+        for line in ps.lines:
+            icon = "🎙️" if line.role.lower() == "narrator" else "💬"
+            print(f"  │ {icon} [{line.role}/{line.gender}]: \"{line.text}\"")
+        print(f"  └──────────────────────────────────────────────────")
+
+    # JSON dump
+    divider("SCRIPT JSON (machine-readable)")
+    json_out = [
+        {
+            "panel": ps.panel,
+            "lines": [
+                {"role": l.role, "text": l.text, "gender": l.gender}
+                for l in ps.lines
+            ],
+        }
+        for ps in scripts
+    ]
+    print(json.dumps(json_out, ensure_ascii=False, indent=2))
+
+
 # ── Utility ──────────────────────────────────────────────────────────
 def _wrap(text: str, width: int) -> list[str]:
     """Simple word-wrapping for terminal display."""
@@ -249,6 +305,8 @@ def main():
                         help="Skip vision extraction, use hardcoded tags")
     parser.add_argument("--reference", type=str, default=None,
                         help="Custom reference image path")
+    parser.add_argument("--test-tts", action="store_true",
+                        help="Also test TTS script extraction (Step 2.5)")
     args = parser.parse_args()
 
     setup_logging()
@@ -265,6 +323,7 @@ def main():
     print(f"  Panels:    {args.panels or 'auto'}")
     print(f"  Reference: {ref_image}")
     print(f"  Vision:    {'skip' if args.skip_vision else 'enabled'}")
+    print(f"  TTS test:  {'yes' if args.test_tts else 'no'}")
     print("=" * 50)
 
     total_t0 = time.time()
@@ -283,11 +342,17 @@ def main():
     # ── Step 2: Prompt engineering ───────────────────────────────
     test_prompt_engineering(config, panels, character_tags)
 
+    # ── Step 2.5: TTS script extraction (optional) ──────────────
+    if args.test_tts:
+        test_script_extraction(config, panels)
+
     # ── Summary ──────────────────────────────────────────────────
     elapsed = time.time() - total_t0
     divider(f"ALL DONE — {elapsed:.1f}s total")
     print("  Next step: feed the final_prompt values into SD generator")
     print("  (requires GPU + diffusion models)")
+    if args.test_tts:
+        print("  TTS script was extracted — review the dialogue above.")
     print()
 
 

@@ -59,6 +59,7 @@ def generate_comic(
     prompt: str,
     panel_count: str,
     seed: int,
+    enable_audio: bool,
 ):
     """
     Gradio callback — runs the full manga generation pipeline.
@@ -69,9 +70,11 @@ def generate_comic(
         The generated comic page, or None on error.
     str
         Status / log message.
+    list | None
+        Audio file paths if audio enabled, else None.
     """
     if not prompt or not prompt.strip():
-        return None, "⚠️ Please enter a story prompt."
+        return None, "⚠️ Please enter a story prompt.", None
 
     # Parse panel count
     panels = None  # auto
@@ -92,25 +95,35 @@ def generate_comic(
 
         try:
             pipe = get_pipeline()
-            result_path = pipe.run(
+            result = pipe.run(
                 reference_image=reference_image,
                 character_tags=tags,
                 user_prompt=prompt.strip(),
                 panel_count=panels,
                 output_path=output_path,
                 seed=actual_seed,
+                enable_audio=enable_audio,
             )
 
             from PIL import Image
-            comic = Image.open(result_path).copy()
+            comic_path = result["comic_path"]
+            comic = Image.open(comic_path).copy()
             status = f"✅ Generated {panels or 'auto'}-panel comic"
             if actual_seed:
                 status += f" (seed={actual_seed})"
-            return comic, status
+
+            # Collect audio files
+            audio_files = None
+            audio_data = result.get("audio")
+            if audio_data and audio_data.get("files"):
+                audio_files = audio_data["files"]
+                status += f" + {len(audio_files)} audio clips"
+
+            return comic, status, audio_files
 
         except Exception as e:
             logger.exception("Pipeline error")
-            return None, f"❌ Error: {e}"
+            return None, f"❌ Error: {e}", None
 
 
 # ── Gradio UI ────────────────────────────────────────────────────────
@@ -119,6 +132,7 @@ DESCRIPTION = """\
 **Reference Image → Story Expansion → SD Prompt Engineering → Stable Diffusion + LoRA → Comic Layout**
 
 Upload a character reference image (or provide manual tags), enter a story concept, and generate a multi-panel manga page.
+Enable 🔊 Audio to add per-panel voice-over (Coqui TTS).
 """
 
 EXAMPLES = [
@@ -185,6 +199,11 @@ def build_ui() -> gr.Blocks:
                     size="lg",
                 )
 
+                enable_audio = gr.Checkbox(
+                    label="🔊 Enable Audio (TTS voice-over)",
+                    value=False,
+                )
+
             # ── Right column: Output ─────────────────────────────────
             with gr.Column(scale=1):
                 output_image = gr.Image(
@@ -197,6 +216,11 @@ def build_ui() -> gr.Blocks:
                     label="Status",
                     interactive=False,
                 )
+                audio_output = gr.File(
+                    label="🔊 Audio Files",
+                    file_count="multiple",
+                    visible=True,
+                )
 
         # ── Examples ─────────────────────────────────────────────────
         gr.Examples(
@@ -208,8 +232,8 @@ def build_ui() -> gr.Blocks:
         # ── Wire up ─────────────────────────────────────────────────
         generate_btn.click(
             fn=generate_comic,
-            inputs=[reference_image, character_tags, prompt, panel_count, seed],
-            outputs=[output_image, status],
+            inputs=[reference_image, character_tags, prompt, panel_count, seed, enable_audio],
+            outputs=[output_image, status, audio_output],
         )
 
     return demo
