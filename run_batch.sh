@@ -71,9 +71,9 @@ echo ""
 run_story() {
     local IDX="$1"
     local PANELS="$2"
-    local TAGS="$3"
-    local PROMPT="$4"
-    local SEED="$5"
+    local PROMPT="$3"
+    local SEED="$4"
+    local REF_IMG="tests/fixtures/meining.jpg"
 
     local OUT_DIR="${OUTPUT_BASE}/story_${IDX}"
     local OUT_IMG="${OUT_DIR}/comic.png"
@@ -87,7 +87,7 @@ run_story() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     python main.py \
-        --character-tags "$TAGS" \
+        -r "$REF_IMG" \
         -p "$PROMPT" \
         --panels "$PANELS" \
         --seed "$SEED" \
@@ -109,32 +109,27 @@ run_story() {
 
 # Story 1 — Action / 4 panels
 run_story 1 4 \
-    "1boy, spiky silver hair, sharp blue eyes, long black trench coat, red scarf, combat boots" \
-    "A lone samurai stands guard on a rain-soaked rooftop. A massive combat mech crashes through the street below. The samurai leaps off the building, blade drawn, slicing through the rain. He lands on the mech's shoulder and drives his katana into its core." \
+    "A lone samurai stands guard on a rain-soaked rooftop. A massive combat mech crashes through the street below. The samurai leaps off the building, blade drawn, slicing through the rain. She lands on the mech's shoulder and drives her katana into its core." \
     42
 
 # Story 2 — Fantasy / 6 panels
 run_story 2 6 \
-    "1girl, long flowing blue hair, white sorceress robe, golden staff, glowing blue eyes" \
     "A young sorceress arrives at the entrance of an ancient crystal cave deep in a mystical forest. She discovers a sealed stone door covered in glowing runes and uses her staff to unlock it. Inside she finds a vast underground lake reflecting thousands of crystal stalactites. A massive water dragon emerges from the lake and roars, sending waves crashing. The sorceress raises her staff and casts a barrier of light, taming the dragon. She rides the dragon out of the cave as the sun rises over the forest." \
     101
 
 # Story 3 — Cyberpunk / 4 panels
 run_story 3 4 \
-    "1boy, short black hair, cybernetic left eye with red glow, leather jacket, mechanical right arm" \
-    "A hacker sits in a neon-lit underground den surrounded by holographic screens. He jacks into a corporate mainframe, his cybernetic eye flickering with data streams. Alarms blare as security drones swarm the corridor outside. He smashes through a window and escapes on a hoverbike into the rain-drenched city." \
+    "A hacker sits in a neon-lit underground den surrounded by holographic screens. She jacks into a corporate mainframe, her cybernetic eye flickering with data streams. Alarms blare as security drones swarm the corridor outside. She smashes through a window and escapes on a hoverbike into the rain-drenched city." \
     77
 
-# Story 4 — Horror / 6 panels
+# Story 4 — Angsty Romance / 6 panels
 run_story 4 6 \
-    "1girl, short black bob hair, pale skin, school uniform, flashlight in hand" \
-    "A girl enters an abandoned hospital at midnight, her flashlight cutting through the dusty darkness. She finds old patient records scattered on the floor with strange symbols drawn in blood. A shadow moves at the end of the hallway, and she freezes. She follows the shadow into an operating room where all the surgical tools are arranged in a perfect circle. The lights flicker and a ghostly figure appears behind her in the reflection of a cracked mirror. She screams and runs toward the exit as the entire building shakes." \
+    "A girl waits alone at a cherry blossom-covered train platform at dusk, clutching a letter she never sent. A boy appears on the opposite platform, their eyes meet through the falling petals. She runs toward the crossing but the signal turns red and a train roars between them. The train passes and he is gone, only his scarf caught on the railing remains. She presses the scarf against her face, tears streaming down, cherry blossoms swirling around her. She walks away into the sunset, the unsent letter slipping from her fingers onto the tracks." \
     256
 
 # Story 5 — Sci-Fi / 4 panels
 run_story 5 4 \
-    "1boy, astronaut suit with cracked visor, brown hair, determined expression, floating in zero gravity" \
-    "An astronaut floats through the wreckage of a destroyed space station, debris and sparks drifting in zero gravity. He spots an escape pod still intact, glowing faintly through the twisted metal. He pushes off a wall fragment and glides toward the pod, dodging a spinning piece of hull. He seals the pod door and launches into the stars as the station explodes behind him." \
+    "An astronaut floats through the wreckage of a destroyed space station, debris and sparks drifting in zero gravity. She spots an escape pod still intact, glowing faintly through the twisted metal. She pushes off a wall fragment and glides toward the pod, dodging a spinning piece of hull. She seals the pod door and launches into the stars as the station explodes behind her." \
     512
 
 # ═══════════════════════════════════════════════════════════════
