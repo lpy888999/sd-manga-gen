@@ -53,11 +53,11 @@ mkdir -p "$TTS_HOME" "$LIBROSA_CACHE_DIR" "$HF_HOME" "$PIP_CACHE_DIR"
 echo "   TTS cache: $TTS_HOME"
 echo "   HF cache:  $HF_HOME"
 
-# ─── Fix peft/transformers compatibility ───────────────────────
-# transformers 5.x removed EncoderDecoderCache; peft < 0.13 still uses it.
-# Upgrade peft to fix this without touching transformers (which diffusers needs).
-echo "== Fixing peft compatibility with transformers 5.x =="
-pip install "peft>=0.13.0" --quiet
+# ─── Fix Python Environment ─────────────────────────────────────
+# The server has an unusual transformers 5.1.0 which breaks peft/diffusers.
+# Force-install stable, compatible versions for SDXL + VITS.
+echo "== Standardizing ML dependencies (transformers, peft, diffusers) =="
+pip install --upgrade "transformers==4.44.2" "peft==0.12.0" "diffusers==0.30.3" "pydantic<2.0" --quiet
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
     PROJECT_DIR="$SLURM_SUBMIT_DIR"
