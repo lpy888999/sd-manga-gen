@@ -14,6 +14,7 @@ HuggingFace Spaces will auto-detect ``app.py`` as the entry point.
 import logging
 import tempfile
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -70,8 +71,8 @@ def generate_comic(
         The generated comic page, or None on error.
     str
         Status / log message.
-    list | None
-        Audio file paths if audio enabled, else None.
+    str | None
+        Path to merged story.wav if audio enabled, else None.
     """
     if not prompt or not prompt.strip():
         return None, "⚠️ Please enter a story prompt.", None
@@ -89,41 +90,45 @@ def generate_comic(
     # Character tags (empty string → None → use vision extraction)
     tags = character_tags.strip() if character_tags else None
 
-    # Output to a temp file
-    with tempfile.TemporaryDirectory() as tmpdir:
-        output_path = os.path.join(tmpdir, "comic.png")
+    # Use a persistent temp dir so Gradio can serve the files after return
+    tmpdir = tempfile.mkdtemp(prefix="manga_")
+    output_path = os.path.join(tmpdir, "comic.png")
+    audio_dir = os.path.join(tmpdir, "audio") if enable_audio else None
 
-        try:
-            pipe = get_pipeline()
-            result = pipe.run(
-                reference_image=reference_image,
-                character_tags=tags,
-                user_prompt=prompt.strip(),
-                panel_count=panels,
-                output_path=output_path,
-                seed=actual_seed,
-                enable_audio=enable_audio,
-            )
+    try:
+        pipe = get_pipeline()
+        result = pipe.run(
+            reference_image=reference_image,
+            character_tags=tags,
+            user_prompt=prompt.strip(),
+            panel_count=panels,
+            output_path=output_path,
+            seed=actual_seed,
+            enable_audio=enable_audio,
+            audio_dir=audio_dir,
+        )
 
-            from PIL import Image
-            comic_path = result["comic_path"]
-            comic = Image.open(comic_path).copy()
-            status = f"✅ Generated {panels or 'auto'}-panel comic"
-            if actual_seed:
-                status += f" (seed={actual_seed})"
+        from PIL import Image
+        comic_path = result["comic_path"]
+        comic = Image.open(comic_path).copy()
+        status = f"✅ Generated {panels or 'auto'}-panel comic"
+        if actual_seed:
+            status += f" (seed={actual_seed})"
 
-            # Collect audio files
-            audio_files = None
-            audio_data = result.get("audio")
-            if audio_data and audio_data.get("files"):
-                audio_files = audio_data["files"]
-                status += f" + {len(audio_files)} audio clips"
+        # Return merged audio path for gr.Audio player
+        merged_wav = None
+        audio_data = result.get("audio")
+        if audio_data:
+            merged_wav = audio_data.get("merged")
+            n_clips = len(audio_data.get("files", []))
+            if merged_wav:
+                status += f" + {n_clips} audio clips → story.wav"
 
-            return comic, status, audio_files
+        return comic, status, merged_wav
 
-        except Exception as e:
-            logger.exception("Pipeline error")
-            return None, f"❌ Error: {e}", None
+    except Exception as e:
+        logger.exception("Pipeline error")
+        return None, f"❌ Error: {e}", None
 
 
 # ── Gradio UI ────────────────────────────────────────────────────────
@@ -132,7 +137,7 @@ DESCRIPTION = """\
 **Reference Image → Story Expansion → SD Prompt Engineering → Stable Diffusion + LoRA → Comic Layout**
 
 Upload a character reference image (or provide manual tags), enter a story concept, and generate a multi-panel manga page.
-Enable 🔊 Audio to add per-panel voice-over (Coqui TTS).
+Enable 🔊 Audio to add per-panel voice-over (Coqui TTS) merged into a single playable track.
 """
 
 EXAMPLES = [
@@ -193,15 +198,15 @@ def build_ui() -> gr.Blocks:
                         precision=0,
                     )
 
+                enable_audio = gr.Checkbox(
+                    label="🔊 Enable Audio (TTS voice-over)",
+                    value=False,
+                )
+
                 generate_btn = gr.Button(
                     "🚀 Generate Comic",
                     variant="primary",
                     size="lg",
-                )
-
-                enable_audio = gr.Checkbox(
-                    label="🔊 Enable Audio (TTS voice-over)",
-                    value=False,
                 )
 
             # ── Right column: Output ─────────────────────────────────
@@ -216,9 +221,9 @@ def build_ui() -> gr.Blocks:
                     label="Status",
                     interactive=False,
                 )
-                audio_output = gr.File(
-                    label="🔊 Audio Files",
-                    file_count="multiple",
+                audio_output = gr.Audio(
+                    label="🔊 Story Audio (merged)",
+                    type="filepath",
                     visible=True,
                 )
 

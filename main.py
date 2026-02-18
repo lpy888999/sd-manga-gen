@@ -103,6 +103,12 @@ Examples:
         action="store_true",
         help="Enable TTS audio generation (requires Coqui TTS)",
     )
+    parser.add_argument(
+        "--audio-dir",
+        type=str,
+        default=None,
+        help="Directory for TTS audio output (overrides config tts.output_dir)",
+    )
 
     return parser.parse_args()
 
@@ -134,7 +140,7 @@ def main():
     log.info(f"  Panels:     {args.panels or 'auto'}")
     log.info(f"  Seed:       {args.seed or 'random'}")
     log.info(f"  Output:     {args.output}")
-    log.info(f"  Config:     {args.config}")
+    log.info(f"  Audio dir:  {args.audio_dir or '(config default)'}")
     log.info("=" * 60)
 
     # Validate reference image exists
@@ -156,6 +162,7 @@ def main():
         output_path=args.output,
         seed=args.seed,
         enable_audio=args.audio,
+        audio_dir=args.audio_dir,
     )
 
     log.info(f"\u2705 Comic saved to: {output['comic_path']}")

@@ -17,6 +17,40 @@ echo "== Node & Time =="
 hostname
 date
 
+# ─── 1. Output Directory Check (Fail Fast) ─────────────────────
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+OUTPUT_BASE="/vol/bitbucket/jl10525/output/batch_${TIMESTAMP}"
+
+echo "== Checking Output Permissions =="
+if ! mkdir -p "$OUTPUT_BASE"; then
+    echo "❌ FATAL: Cannot create output directory: $OUTPUT_BASE"
+    exit 1
+fi
+echo "✅ Output directory created: $OUTPUT_BASE"
+
+# ─── 2. Environment Activation ─────────────────────────────────
+echo "== Setting up Environment =="
+
+CONDA_ROOT="/vol/bitbucket/jl10525/miniconda3"
+
+# ✅ 修复：不再 source ~/.bashrc，直接加载 conda.sh
+source "${CONDA_ROOT}/etc/profile.d/conda.sh"
+
+# 激活环境
+conda activate manga
+
+echo "✅ Conda environment 'manga' activated"
+echo "   Python: $(which python)"
+echo "   Conda:  $CONDA_DEFAULT_ENV"
+
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    PROJECT_DIR="$SLURM_SUBMIT_DIR"
+else
+    PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
+fi
+cd "$PROJECT_DIR"
+echo "   Project dir: $(pwd)"
+# ─── 3. GPU & CUDA Check ───────────────────────────────────────
 echo "== GPU Status =="
 nvidia-smi || echo "no nvidia-smi"
 
@@ -29,37 +63,21 @@ if torch.cuda.is_available():
     print("device name:", torch.cuda.get_device_name(0))
 PYEOF
 
-# ─── Environment ────────────────────────────────────────────────
-# Ollama — adjust path to match your setup
+# ─── 4. Ollama Setup ───────────────────────────────────────────
 OLLAMA=/homes/jl10525/bin/ollama
 export OLLAMA_MODELS=$HOME/ollama_data
 
-# Start Ollama server in background
 echo "== Starting Ollama server =="
 $OLLAMA serve &
 OLLAMA_PID=$!
-sleep 5  # wait for server to initialize
+sleep 5
 
-# Verify Ollama is responsive
 $OLLAMA list || { echo "ERROR: Ollama failed to start"; kill $OLLAMA_PID 2>/dev/null; exit 1; }
 
-# Pull required models (no-op if already present)
 echo "== Pulling LLM models =="
-$OLLAMA pull qwen3-coder-next:cloud || echo "WARNING: failed to pull qwen3-coder-next:cloud"
-$OLLAMA pull gemma3:12b-cloud       || echo "WARNING: failed to pull gemma3:12b-cloud"
+$OLLAMA pull qwen3.5:cloud || echo "WARNING: failed to pull qwen3.5:cloud"
+$OLLAMA pull gemma3:12b-cloud || echo "WARNING: failed to pull gemma3:12b-cloud"
 
-# Project directory
-PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$PROJECT_DIR"
-
-# Activate conda env (uncomment and adjust as needed)
-# source ~/miniconda3/etc/profile.d/conda.sh
-# conda activate manga
-
-# ─── Output directories ────────────────────────────────────────
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-OUTPUT_BASE="output/batch_${TIMESTAMP}"
-mkdir -p "$OUTPUT_BASE"
 
 echo ""
 echo "═══════════════════════════════════════════════════"
@@ -73,7 +91,6 @@ run_story() {
     local PANELS="$2"
     local PROMPT="$3"
     local SEED="$4"
-    local REF_IMG="tests/fixtures/meining.jpg"
 
     local OUT_DIR="${OUTPUT_BASE}/story_${IDX}"
     local OUT_IMG="${OUT_DIR}/comic.png"
@@ -87,11 +104,12 @@ run_story() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     python main.py \
-        -r "$REF_IMG" \
+        --reference "tests/fixtures/meining.jpg" \
         -p "$PROMPT" \
         --panels "$PANELS" \
         --seed "$SEED" \
         --audio \
+        --audio-dir "${OUT_DIR}/audio" \
         -o "$OUT_IMG" \
         -v \
         2>&1 | tee "$LOG_FILE"
@@ -109,7 +127,7 @@ run_story() {
 
 # Story 1 — Action / 4 panels
 run_story 1 4 \
-    "A lone samurai stands guard on a rain-soaked rooftop. A massive combat mech crashes through the street below. The samurai leaps off the building, blade drawn, slicing through the rain. She lands on the mech's shoulder and drives her katana into its core." \
+    "A lone samurai stands guard on a rain-soaked rooftop. A massive combat mech crashes through the street below. The samurai leaps off the building, blade drawn, slicing through the rain. He lands on the mech's shoulder and drives his katana into its core." \
     42
 
 # Story 2 — Fantasy / 6 panels
@@ -119,17 +137,17 @@ run_story 2 6 \
 
 # Story 3 — Cyberpunk / 4 panels
 run_story 3 4 \
-    "A hacker sits in a neon-lit underground den surrounded by holographic screens. She jacks into a corporate mainframe, her cybernetic eye flickering with data streams. Alarms blare as security drones swarm the corridor outside. She smashes through a window and escapes on a hoverbike into the rain-drenched city." \
+    "A hacker sits in a neon-lit underground den surrounded by holographic screens. He jacks into a corporate mainframe, his cybernetic eye flickering with data streams. Alarms blare as security drones swarm the corridor outside. He smashes through a window and escapes on a hoverbike into the rain-drenched city." \
     77
 
-# Story 4 — Angsty Romance / 6 panels
+# Story 4 — Horror / 6 panels
 run_story 4 6 \
-    "A girl waits alone at a cherry blossom-covered train platform at dusk, clutching a letter she never sent. A boy appears on the opposite platform, their eyes meet through the falling petals. She runs toward the crossing but the signal turns red and a train roars between them. The train passes and he is gone, only his scarf caught on the railing remains. She presses the scarf against her face, tears streaming down, cherry blossoms swirling around her. She walks away into the sunset, the unsent letter slipping from her fingers onto the tracks." \
+    "A girl enters an abandoned hospital at midnight, her flashlight cutting through the dusty darkness. She finds old patient records scattered on the floor with strange symbols drawn in blood. A shadow moves at the end of the hallway, and she freezes. She follows the shadow into an operating room where all the surgical tools are arranged in a perfect circle. The lights flicker and a ghostly figure appears behind her in the reflection of a cracked mirror. She screams and runs toward the exit as the entire building shakes." \
     256
 
 # Story 5 — Sci-Fi / 4 panels
 run_story 5 4 \
-    "An astronaut floats through the wreckage of a destroyed space station, debris and sparks drifting in zero gravity. She spots an escape pod still intact, glowing faintly through the twisted metal. She pushes off a wall fragment and glides toward the pod, dodging a spinning piece of hull. She seals the pod door and launches into the stars as the station explodes behind her." \
+    "An astronaut floats through the wreckage of a destroyed space station, debris and sparks drifting in zero gravity. He spots an escape pod still intact, glowing faintly through the twisted metal. He pushes off a wall fragment and glides toward the pod, dodging a spinning piece of hull. He seals the pod door and launches into the stars as the station explodes behind him." \
     512
 
 # ═══════════════════════════════════════════════════════════════
@@ -143,7 +161,7 @@ echo "  Results:  $OUTPUT_BASE/"
 echo "  Slurm log: slurm-${SLURM_JOB_ID}.out"
 echo "═══════════════════════════════════════════════════"
 
-# Stop Ollama
+# Stop Ollama server
 kill $OLLAMA_PID 2>/dev/null || true
 
 echo "== GPU Status (final) =="

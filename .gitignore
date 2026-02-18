@@ -23,6 +23,13 @@ Thumbs.db
 # Project outputs
 output/*.png
 output/*.jpg
+output/audio/
+
+# Batch run outputs (batch_YYYYMMDD_HHMMSS/)
+batch_*/
+
+# Audio outputs
+*.wav
 
 # LoRA weights (too large for git)
 loras/character/*.safetensors

@@ -141,6 +141,7 @@ class MangaPipeline:
         output_path: str = "output/comic.png",
         seed: Optional[int] = None,
         enable_audio: Optional[bool] = None,
+        audio_dir: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Run the full manga generation pipeline.
@@ -161,6 +162,8 @@ class MangaPipeline:
             Override seed from config.
         enable_audio : bool | None
             Override tts.enabled from config.  None = use config.
+        audio_dir : str | None
+            Override tts.output_dir from config for audio files.
 
         Returns
         -------
@@ -219,7 +222,9 @@ class MangaPipeline:
                 logger.info("=" * 60)
                 logger.info("STEP 2.6 · Audio Synthesis (Coqui TTS)")
                 logger.info("=" * 60)
-                audio_result = self.audio_engine.synthesize(scripts)
+                audio_result = self.audio_engine.synthesize(
+                    scripts, output_dir=audio_dir
+                )
 
         # ── Step 3: Image generation ─────────────────────────────────
         logger.info("=" * 60)

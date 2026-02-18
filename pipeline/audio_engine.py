@@ -23,6 +23,7 @@ Usage::
 import json
 import logging
 import random
+import wave
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
@@ -205,16 +206,56 @@ class AudioEngine:
             json.dump(script_json, f, ensure_ascii=False, indent=2)
         logger.info(f"Script saved to {script_path}")
 
+        # Merge all per-panel WAVs into a single story.wav
+        merged_path = self._merge_wavs(all_files, out / "story.wav")
+
         result = {
             "audio_dir": str(out),
             "files": all_files,
+            "merged": str(merged_path) if merged_path else None,
             "script": script_json,
         }
 
         logger.info(
             f"✅ Generated {len(all_files)} audio files in {out}"
         )
+        if merged_path:
+            logger.info(f"✅ Merged audio → {merged_path}")
         return result
+
+    # ── WAV merge ────────────────────────────────────────────────────
+    @staticmethod
+    def _merge_wavs(wav_paths: List[str], out_path: Path) -> Optional[Path]:
+        """
+        Concatenate a list of WAV files into a single WAV.
+
+        All input files must share the same sample rate, channels, and
+        sample width (guaranteed when they come from the same TTS model).
+        Returns the output path, or None if the list is empty.
+        """
+        if not wav_paths:
+            return None
+
+        valid = [p for p in wav_paths if Path(p).exists()]
+        if not valid:
+            return None
+
+        try:
+            with wave.open(valid[0], "rb") as first:
+                params = first.getparams()
+
+            with wave.open(str(out_path), "wb") as out_wav:
+                out_wav.setparams(params)
+                for path in valid:
+                    with wave.open(path, "rb") as src:
+                        out_wav.writeframes(src.readframes(src.getnframes()))
+
+            return out_path
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                f"WAV merge failed: {exc}"
+            )
+            return None
 
     # ── Utility ──────────────────────────────────────────────────────
     def get_voice_map(self) -> Dict[str, str]:
