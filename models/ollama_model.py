@@ -112,13 +112,35 @@ class OllamaChatModel:
             preview = self._preview_content(content)
             logger.debug(f"  [{role}]: {preview}")
 
-        # ── Call API ─────────────────────────────────────────────────
-        response = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=messages,
-            temperature=self.temperature,
-            **kwargs,
-        )
+        # ── Call API with Retries ────────────────────────────────────
+        max_retries = 5
+        retry_delay = 2.0  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=self.temperature,
+                    **kwargs,
+                )
+                break  # Success
+            except Exception as e:
+                # Check for 503 or other transient server errors
+                is_transient = "503" in str(e) or "Service Unavailable" in str(e) or "overloaded" in str(e).lower()
+                
+                if is_transient and attempt < max_retries - 1:
+                    wait_time = retry_delay * (2 ** attempt)
+                    logger.warning(
+                        f"Ollama 503/Transient Error (Attempt {attempt+1}/{max_retries}). "
+                        f"Retrying in {wait_time}s... Error: {e}"
+                    )
+                    import time
+                    time.sleep(wait_time)
+                else:
+                    # Final attempt or non-transient error
+                    logger.error(f"Ollama API permanent failure: {e}")
+                    raise e
 
         choice = response.choices[0]
         raw_content = choice.message.content or ""
