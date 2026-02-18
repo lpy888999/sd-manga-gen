@@ -107,8 +107,8 @@ sleep 5
 $OLLAMA list || { echo "ERROR: Ollama failed to start"; kill $OLLAMA_PID 2>/dev/null; exit 1; }
 
 echo "== Pulling LLM models =="
-$OLLAMA pull qwen3.5:cloud || echo "WARNING: failed to pull qwen3.5:cloud"
-$OLLAMA pull gemma3:12b-cloud || echo "WARNING: failed to pull gemma3:12b-cloud"
+$OLLAMA pull qwen3:8b || echo "WARNING: failed to pull qwen3:8b"
+$OLLAMA pull qwen3-vl:4b || echo "WARNING: failed to pull qwen3-vl:4b"
 
 
 echo ""
