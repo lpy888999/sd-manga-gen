@@ -101,7 +101,17 @@ class AudioEngine:
             )
 
         logger.info(f"Loading TTS model: {self.model_name} …")
-        self._tts = CoquiTTS(self.model_name)
+        # Use GPU if available — critical for correct speaker embedding quality
+        try:
+            import torch
+            use_gpu = torch.cuda.is_available()
+        except ImportError:
+            use_gpu = False
+        if use_gpu:
+            logger.info("TTS: Using GPU for inference.")
+        else:
+            logger.warning("TTS: GPU not available, falling back to CPU. Speaker quality may be degraded.")
+        self._tts = CoquiTTS(self.model_name, gpu=use_gpu)
         logger.info("TTS model loaded.")
 
     # ── Voice assignment ─────────────────────────────────────────────
@@ -190,7 +200,11 @@ class AudioEngine:
                         else:
                             kwargs["speaker"] = voice
                     else:
+                         # VITS / VCTK
                          kwargs["speaker"] = voice
+                         # Slow down speech by 20% (default is 1.0, larger is slower)
+                         # This helps with the "too fast" issue user reported
+                         kwargs["length_scale"] = 1.2
 
                     self._tts.tts_to_file(
                         text=line.text,
