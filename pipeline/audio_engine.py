@@ -191,8 +191,8 @@ class AudioEngine:
                 filename = f"panel_{ps.panel:02d}_line_{j + 1:02d}.wav"
                 filepath = out / filename
 
-                # Sanitize text — skip empty or suspiciously short lines
-                text = line.text.strip()
+                # Sanitize and normalize text for TTS
+                text = self._clean_text(line.text)
                 if len(text) < 3:
                     logger.warning(
                         f"TTS: Skipping Panel {ps.panel} Line {j+1} — text too short: {text!r}"
@@ -201,7 +201,7 @@ class AudioEngine:
 
                 logger.info(
                     f"TTS: Panel {ps.panel}, Line {j + 1} "
-                    f"[{line.role}/{voice}]: \"{line.text}\""
+                    f"[{line.role}/{voice}]: \"{text}\""
                 )
 
                 try:
@@ -219,13 +219,13 @@ class AudioEngine:
                         kwargs["speaker"] = voice
 
                     self._tts.tts_to_file(
-                        text=line.text,
+                        text=text,
                         file_path=str(filepath),
                         **kwargs
                     )
                     all_files.append(str(filepath))
                 except Exception as e:
-                    logger.error(f"TTS failed for '{line.text}': {e}")
+                    logger.error(f"TTS failed for '{text}': {e}")
                     continue
 
                 panel_entry["lines"].append({
@@ -296,6 +296,39 @@ class AudioEngine:
             return None
 
     # ── Utility ──────────────────────────────────────────────────────
+    @staticmethod
+    def _clean_text(text: str) -> str:
+        """
+        Normalize text for TTS to prevent common noise/artifact issues.
+        
+        1. Strips roles/metadata like 'Narrator:' or '[Samurai]'.
+        2. Replaces problematic non-ASCII punctuation (em-dashes, curly quotes).
+        3. Removes non-printable or suspicious characters.
+        """
+        if not text:
+            return ""
+
+        # Remove LLM-hallucinated role prefixes (e.g., "Narrator: Hello" -> "Hello")
+        text = re.sub(r"^(Narrator|Character|[\w\s]+)[\s:]+", "", text, flags=re.IGNORECASE)
+        # Remove brackets (e.g., "[Scene-setting text]" -> "Scene-setting text")
+        text = text.replace("[", "").replace("]", "").replace("(", "").replace(")", "")
+
+        # Normalize punctuation that causes noise in VITS
+        # Em-dashes and en-dashes -> Replace with comma for a natural pause
+        text = text.replace("—", ", ").replace("–", ", ").replace("--", ", ")
+        
+        # Curly quotes -> Straight quotes
+        text = text.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+        
+        # Strip everything except basic English characters and punctuation
+        # (aggressive non-ASCII cleanup)
+        text = "".join(c for c in text if c.isprintable() and (ord(c) < 128 or c in ".,!?;:'\" "))
+
+        # Final cleanup of whitespace and trailing junk
+        text = re.sub(r"\s+", " ", text).strip()
+        
+        return text
+
     def get_voice_map(self) -> Dict[str, str]:
         """Return the current character → voice mapping."""
         return dict(self._voice_map)
