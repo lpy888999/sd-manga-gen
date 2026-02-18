@@ -69,15 +69,16 @@ tts:
   script_temperature: 0.5
 
   # Coqui TTS model
-  model: "tts_models/multilingual/multi-dataset/xtts_v2"
+  # VCTK VITS: fast, multi-speaker, no transformers dependency conflict
+  # Better speakers: p225/p236 (clear female), p226/p243 (clear male)
+  model: "tts_models/en/vctk/vits"
 
-  # Voice assignment pool
-  # For XTTS: use .wav file paths (voice cloning). Run scripts/fetch_tts_refs.py to generate them.
-  # For VCTK VITS: use speaker IDs like "p230"
+  # Voice assignment pool (VCTK speaker IDs)
+  # Chosen for clarity and neutral accent (avoid heavy Scottish: p230, p232)
   voices:
-    narrator: "assets/tts_refs/narrator.wav"
-    male_pool: ["assets/tts_refs/male.wav"]
-    female_pool: ["assets/tts_refs/female.wav"]
+    narrator: "p225"
+    male_pool: ["p226", "p243", "p254", "p260"]
+    female_pool: ["p225", "p236", "p239", "p270"]
 
   output_dir: "output/audio"
 

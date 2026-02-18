@@ -51,13 +51,6 @@ export PIP_CACHE_DIR="/vol/bitbucket/jl10525/pip_cache"
 export COQUI_TOS_AGREED=1
 mkdir -p "$TTS_HOME" "$LIBROSA_CACHE_DIR" "$HF_HOME" "$PIP_CACHE_DIR"
 echo "   TTS cache: $TTS_HOME"
-echo "   Pip cache: $PIP_CACHE_DIR"
-
-# ─── Fix Environment Dependencies ──────────────────────────────
-# Coqui TTS 0.22.0 is incompatible with transformers >= 4.40.0
-echo "== Checking / Fixing Dependencies =="
-pip install "transformers<4.40.0" "pydantic<2.0" --quiet
-
 echo "   HF cache:  $HF_HOME"
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
