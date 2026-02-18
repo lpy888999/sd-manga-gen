@@ -179,10 +179,23 @@ class AudioEngine:
                 )
 
                 try:
+                    # XTTS / Multilingual support
+                    is_xtts = "xtts" in self.model_name
+                    kwargs = {}
+                    if is_xtts:
+                        kwargs["language"] = "en"  # Default to English, could be configurable
+                        if voice.endswith(".wav"):
+                            kwargs["speaker_wav"] = voice
+                            kwargs["speaker"] = None
+                        else:
+                            kwargs["speaker"] = voice
+                    else:
+                         kwargs["speaker"] = voice
+
                     self._tts.tts_to_file(
                         text=line.text,
-                        speaker=voice,
                         file_path=str(filepath),
+                        **kwargs
                     )
                     all_files.append(str(filepath))
                 except Exception as e:

@@ -43,6 +43,14 @@ echo "✅ Conda environment 'manga' activated"
 echo "   Python: $(which python)"
 echo "   Conda:  $CONDA_DEFAULT_ENV"
 
+# ─── Redirect model caches to /vol/bitbucket (avoid HOME quota) ──
+export TTS_HOME="/vol/bitbucket/jl10525/tts_cache"
+export LIBROSA_CACHE_DIR="/vol/bitbucket/jl10525/librosa_cache"
+export HF_HOME="/vol/bitbucket/jl10525/hf_cache"
+mkdir -p "$TTS_HOME" "$LIBROSA_CACHE_DIR" "$HF_HOME"
+echo "   TTS cache: $TTS_HOME"
+echo "   HF cache:  $HF_HOME"
+
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
     PROJECT_DIR="$SLURM_SUBMIT_DIR"
 else
@@ -63,11 +71,27 @@ if torch.cuda.is_available():
     print("device name:", torch.cuda.get_device_name(0))
 PYEOF
 
-# ─── 4. Ollama Setup ───────────────────────────────────────────
-OLLAMA=/homes/jl10525/bin/ollama
-export OLLAMA_MODELS=$HOME/ollama_data
+# ─── 4. TTS Reference Audio ────────────────────────────────────
+# Generate reference WAVs for XTTS voice cloning (only if not already present)
+if [ ! -f "assets/tts_refs/narrator.wav" ]; then
+    echo "== Generating TTS reference audio =="
+    python scripts/fetch_tts_refs.py
+else
+    echo "== TTS reference audio already exists, skipping =="
+fi
 
-echo "== Starting Ollama server =="
+# ─── 5. Ollama Setup ───────────────────────────────────────────
+OLLAMA=/homes/jl10525/bin/ollama
+export OLLAMA_MODELS="/vol/bitbucket/jl10525/ollama_data"
+mkdir -p "$OLLAMA_MODELS"
+echo "   Ollama models: $OLLAMA_MODELS"
+
+# Generate a random port between 11435 and 15000 to avoid conflicts
+RANDOM_PORT=$((11435 + RANDOM % 3565))
+export OLLAMA_HOST="127.0.0.1:${RANDOM_PORT}"
+export OLLAMA_BASE_URL="http://127.0.0.1:${RANDOM_PORT}/v1/"
+
+echo "== Starting Ollama server (Port: ${RANDOM_PORT}) =="
 $OLLAMA serve &
 OLLAMA_PID=$!
 sleep 5
@@ -125,30 +149,30 @@ run_story() {
 #  5 Pre-designed Stories
 # ═══════════════════════════════════════════════════════════════
 
-# Story 1 — Action / 4 panels
+# Story 1 — Xianxia (Cultivation) / 4 panels
 run_story 1 4 \
-    "A lone samurai stands guard on a rain-soaked rooftop. A massive combat mech crashes through the street below. The samurai leaps off the building, blade drawn, slicing through the rain. He lands on the mech's shoulder and drives his katana into its core." \
-    42
+    "A female cultivator in elegant hanfu stands atop a misty peak, her long sleeves fluttering in the wind. She performs a hand seal, and a glowing green flying sword unsheathes from her back. She leaps onto the sword and soars through a sea of clouds towards a floating celestial palace. Thousands of golden cranes fly alongside her as she reaches the palace gate." \
+    777
 
-# Story 2 — Fantasy / 6 panels
+# Story 2 — Palace Intrigue / 6 panels
 run_story 2 6 \
-    "A young sorceress arrives at the entrance of an ancient crystal cave deep in a mystical forest. She discovers a sealed stone door covered in glowing runes and uses her staff to unlock it. Inside she finds a vast underground lake reflecting thousands of crystal stalactites. A massive water dragon emerges from the lake and roars, sending waves crashing. The sorceress raises her staff and casts a barrier of light, taming the dragon. She rides the dragon out of the cave as the sun rises over the forest." \
-    101
+    "An elegant noble lady walks through a quiet imperial garden at sunset, holding a delicate silk fan. She notices a hidden scroll tucked behind a decorative rock and carefully retrieves it. In the flickering candlelight of her chamber, she unrolls the scroll to reveal a secret map of the palace. Suddenly, a shadow falls across the paper, and she quickly hides it under her embroidery. She turns to face a mysterious guard standing in the doorway, her expression calm but guarded. They exchange a silent, meaningful look as the palace bells toll in the distance." \
+    888
 
-# Story 3 — Cyberpunk / 4 panels
+# Story 3 — Wuxia (Bamboo Forest Duel) / 4 panels
 run_story 3 4 \
-    "A hacker sits in a neon-lit underground den surrounded by holographic screens. He jacks into a corporate mainframe, his cybernetic eye flickering with data streams. Alarms blare as security drones swarm the corridor outside. He smashes through a window and escapes on a hoverbike into the rain-drenched city." \
-    77
+    "A female warrior in red and white martial robes stands motionless in the center of a dense bamboo forest. A rain of leaves falls as an unseen assassin strikes, and she parries the blade with a silver flute. She kicks off a bamboo stalk, performing a graceful mid-air spin, her silk ribbons trailing behind. With a swift strike of her concealed dagger, she disarms the assassin, who disappears back into the emerald shadows." \
+    999
 
-# Story 4 — Horror / 6 panels
+# Story 4 — Mythology (The Phoenix) / 6 panels
 run_story 4 6 \
-    "A girl enters an abandoned hospital at midnight, her flashlight cutting through the dusty darkness. She finds old patient records scattered on the floor with strange symbols drawn in blood. A shadow moves at the end of the hallway, and she freezes. She follows the shadow into an operating room where all the surgical tools are arranged in a perfect circle. The lights flicker and a ghostly figure appears behind her in the reflection of a cracked mirror. She screams and runs toward the exit as the entire building shakes." \
-    256
+    "A maiden travels to the edge of a volcanic crater under a blood-red moon to find the legendary Fire Phoenix. She begins to play a soul-stirring melody on her guzheng, the notes echoing through the rocky canyons. The magma below begins to glow intensely, and a magnificent phoenix made of pure flame emerges, wings outstretched. The maiden stands her ground, unaffected by the heat, as the phoenix bows its head to her. The creature transforms into a glowing feather, which she carefully tucks into her hair as a protective amulet. She walks away as the first light of dawn touches the mountain peaks." \
+    123
 
-# Story 5 — Sci-Fi / 4 panels
+# Story 5 — Poetic (Moonlit Zither) / 4 panels
 run_story 5 4 \
-    "An astronaut floats through the wreckage of a destroyed space station, debris and sparks drifting in zero gravity. He spots an escape pod still intact, glowing faintly through the twisted metal. He pushes off a wall fragment and glides toward the pod, dodging a spinning piece of hull. He seals the pod door and launches into the stars as the station explodes behind him." \
-    512
+    "Under a blooming peach tree by a moonlit lake, a young woman in light blue silk plays the zither. Soft blossoms fall onto the water's surface as her melody calms the ripples. An old friend arrives on a small wooden boat, carrying a jar of osmanthus wine and two jade cups. They sit together in silence, watching the reflection of the silver moon as the night breeze carries the scent of flowers." \
+    456
 
 # ═══════════════════════════════════════════════════════════════
 #  Cleanup

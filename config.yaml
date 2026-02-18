@@ -4,7 +4,7 @@
 
 # --- LLM Settings ---
 llm:
-  model_name: "qwen3-coder-next:cloud"     # Ollama model for text tasks
+  model_name: "qwen3.5:cloud"     # Ollama model for text tasks
   vision_model_name: "gemma3:12b-cloud"           # Multimodal model for character extraction
   temperature: 0.7
 
@@ -65,17 +65,19 @@ tts:
 
   # LLM for script extraction (can differ from main llm.model_name)
   # Set to null or omit to reuse the main llm.model_name
-  script_model_name: qwen3-coder-next:cloud
+  script_model_name: qwen3.5:cloud
   script_temperature: 0.5
 
   # Coqui TTS model
-  model: "tts_models/en/vctk/vits"   # or xtts_v2 for multilingual
+  model: "tts_models/multilingual/multi-dataset/xtts_v2"
 
-  # Voice assignment pool (VCTK speaker IDs)
+  # Voice assignment pool
+  # For XTTS: use .wav file paths (voice cloning). Run scripts/fetch_tts_refs.py to generate them.
+  # For VCTK VITS: use speaker IDs like "p230"
   voices:
-    narrator: "p230"
-    male_pool: ["p232", "p243", "p245", "p246"]
-    female_pool: ["p229", "p231", "p234", "p236"]
+    narrator: "assets/tts_refs/narrator.wav"
+    male_pool: ["assets/tts_refs/male.wav"]
+    female_pool: ["assets/tts_refs/female.wav"]
 
   output_dir: "output/audio"
 
