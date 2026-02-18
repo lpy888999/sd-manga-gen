@@ -112,6 +112,14 @@ class AudioEngine:
         else:
             logger.warning("TTS: GPU not available, falling back to CPU. Speaker quality may be degraded.")
         self._tts = CoquiTTS(self.model_name, gpu=use_gpu)
+        # Slow down VITS speech by 20% (length_scale > 1.0 = slower)
+        # Must be set on the model config, not passed as a kwarg to tts_to_file
+        if "vits" in self.model_name and hasattr(self._tts, "synthesizer"):
+            try:
+                self._tts.synthesizer.tts_model.length_scale = 1.2
+                logger.info("TTS: Set length_scale=1.2 for slower, more natural speech.")
+            except Exception:
+                pass  # Not critical, just a quality improvement
         logger.info("TTS model loaded.")
 
     # ── Voice assignment ─────────────────────────────────────────────
@@ -193,18 +201,14 @@ class AudioEngine:
                     is_xtts = "xtts" in self.model_name
                     kwargs = {}
                     if is_xtts:
-                        kwargs["language"] = "en"  # Default to English, could be configurable
+                        kwargs["language"] = "en"
                         if voice.endswith(".wav"):
                             kwargs["speaker_wav"] = voice
-                            kwargs["speaker"] = None
                         else:
                             kwargs["speaker"] = voice
                     else:
-                         # VITS / VCTK
-                         kwargs["speaker"] = voice
-                         # Slow down speech by 20% (default is 1.0, larger is slower)
-                         # This helps with the "too fast" issue user reported
-                         kwargs["length_scale"] = 1.2
+                        # VITS / VCTK
+                        kwargs["speaker"] = voice
 
                     self._tts.tts_to_file(
                         text=line.text,
@@ -214,7 +218,6 @@ class AudioEngine:
                     all_files.append(str(filepath))
                 except Exception as e:
                     logger.error(f"TTS failed for '{line.text}': {e}")
-                    # Continue with remaining lines
                     continue
 
                 panel_entry["lines"].append({
