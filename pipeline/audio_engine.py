@@ -191,6 +191,14 @@ class AudioEngine:
                 filename = f"panel_{ps.panel:02d}_line_{j + 1:02d}.wav"
                 filepath = out / filename
 
+                # Sanitize text — skip empty or suspiciously short lines
+                text = line.text.strip()
+                if len(text) < 3:
+                    logger.warning(
+                        f"TTS: Skipping Panel {ps.panel} Line {j+1} — text too short: {text!r}"
+                    )
+                    continue
+
                 logger.info(
                     f"TTS: Panel {ps.panel}, Line {j + 1} "
                     f"[{line.role}/{voice}]: \"{line.text}\""

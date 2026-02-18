@@ -152,16 +152,23 @@ class ScriptGenerator:
         cleaned = re.sub(r"```\s*$", "", cleaned, flags=re.MULTILINE)
         cleaned = cleaned.strip()
 
+        # Try to extract a JSON array from anywhere in the response
+        # (handles cases where LLM adds extra text before/after the JSON)
+        if not cleaned.startswith("["):
+            match = re.search(r"\[.*\]", cleaned, re.DOTALL)
+            if match:
+                cleaned = match.group(0)
+
         try:
             data = json.loads(cleaned)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse script JSON: {e}")
             logger.error(f"Raw content: {cleaned[:500]}")
-            # Fallback: one narrator line per panel
+            # Fallback: one narrator line per panel with meaningful text
             return [
                 PanelScript(
                     panel=i + 1,
-                    lines=[ScriptLine(role="Narrator", text=f"Panel {i + 1}.", gender="male")],
+                    lines=[ScriptLine(role="Narrator", text="The story continues.", gender="male")],
                 )
                 for i in range(expected_panels)
             ]
