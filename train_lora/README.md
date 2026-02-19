@@ -104,7 +104,7 @@ Create `upload.py` inside the `diffusers` folder:
 from huggingface_hub import HfApi
 api = HfApi()
 
-REPO_ID = "CheCui/sdxl-ghibli-100-lora"
+REPO_ID = "YourUsername/sdxl-ghibli-100-lora"  # Change to your own repo
 TOKEN = "hf_YOUR_WRITE_TOKEN_HERE" 
 
 api.create_repo(repo_id=REPO_ID, token=TOKEN, repo_type="model", exist_ok=True)
@@ -114,6 +114,8 @@ api.upload_folder(
     repo_type="model",
     token=TOKEN
 )
+
+print("✅ Upload complete! Your model is now on Hugging Face.")
 ```
 Ensure your environment is active, then run the script on the login node: 
 ```bash
