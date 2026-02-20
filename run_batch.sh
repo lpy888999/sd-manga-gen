@@ -55,9 +55,9 @@ echo "   HF cache:  $HF_HOME"
 
 # ─── Fix Python Environment ─────────────────────────────────────
 # The server has an unusual transformers 5.1.0 which breaks peft/diffusers.
-# Force-install stable, compatible versions for SDXL + VITS.
-echo "== Standardizing ML dependencies (transformers, peft, diffusers) =="
-pip install --upgrade "transformers==4.44.2" "peft==0.12.0" "diffusers==0.30.3" "pydantic<2.0" --quiet
+# Force-install stable, compatible versions for SDXL.
+echo "== Standardizing ML dependencies (transformers, peft, diffusers) and TTS (edge-tts) =="
+pip install --upgrade "transformers==4.44.2" "peft==0.12.0" "diffusers==0.30.3" "pydantic<2.0" "edge-tts" "pydub" --quiet
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
     PROJECT_DIR="$SLURM_SUBMIT_DIR"

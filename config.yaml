@@ -75,17 +75,15 @@ tts:
   script_model_name: qwen3:8b
   script_temperature: 0.5
 
-  # Coqui TTS model
-  # VCTK VITS: fast, multi-speaker, no transformers dependency conflict
-  # Better speakers: p225/p236 (clear female), p226/p243 (clear male)
-  model: "tts_models/en/vctk/vits"
+  # Edge TTS model identifier
+  model: "edge-tts"
 
-  # Voice assignment pool (VCTK speaker IDs)
-  # Chosen for clarity and neutral accent (avoid heavy Scottish: p230, p232)
+  # Voice assignment pool (Microsoft Neural voices)
+  # High-quality, emotive, zero-VRAM cloud voices.
   voices:
-    narrator: "p225"
-    male_pool: ["p226", "p243", "p254", "p260"]
-    female_pool: ["p225", "p236", "p239", "p270"]
+    narrator: "en-US-ChristopherNeural"
+    male_pool: ["en-US-GuyNeural", "en-US-EricNeural", "en-GB-RyanNeural", "en-AU-WilliamNeural"]
+    female_pool: ["en-US-AriaNeural", "en-US-JennyNeural", "en-GB-SoniaNeural", "en-AU-NatashaNeural"]
 
   output_dir: "output/audio"
 

@@ -1,18 +1,13 @@
 """
-Audio Engine — Coqui TTS speech synthesis
+Audio Engine — Edge TTS speech synthesis
 ==========================================
-Generates per-panel ``.wav`` files from :class:`ScriptGenerator` output.
+Generates per-panel ``.wav`` files from :class:`ScriptGenerator` output using Microsoft Edge TTS API.
 
 Voice Assignment
 ----------------
 - ``Narrator`` → fixed speaker from config
 - Named characters → automatically assigned from gender-matched voice pool
 - Same character always gets the same voice across all panels
-
-Supports two TTS backends:
-
-1. **VCTK** (default): ``tts_models/en/vctk/vits`` — fast, multi-speaker
-2. **XTTS**: ``tts_models/multilingual/multi-dataset/xtts_v2`` — multilingual
 
 Usage::
 
@@ -25,234 +20,150 @@ import logging
 import random
 import re
 import wave
+import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+
+import edge_tts
+from pydub import AudioSegment
 
 from pipeline.script_generator import PanelScript, ScriptLine
 
 logger = logging.getLogger(__name__)
 
-# ── Lazy import for TTS (heavy dependency) ───────────────────────────
-_TTS_AVAILABLE = False
-try:
-    from TTS.api import TTS as CoquiTTS
-    _TTS_AVAILABLE = True
-except ImportError:
-    pass
-
-
 class AudioEngine:
     """
-    Generate speech audio from panel scripts.
+    Generate speech audio from panel scripts using edge-tts.
 
     Parameters
     ----------
     model_name : str
-        Coqui TTS model identifier.
+        TTS engine marker (e.g., "edge-tts").
     narrator_voice : str
-        Speaker ID for the narrator.
+        Speaker ID for the narrator (e.g., "en-US-ChristopherNeural").
     male_pool : list[str]
         Pool of male speaker IDs for character assignment.
     female_pool : list[str]
         Pool of female speaker IDs for character assignment.
     output_dir : str
-        Directory for output ``.wav`` files.
+        Directory for output files.
     """
 
     def __init__(
         self,
-        model_name: str = "tts_models/en/vctk/vits",
-        narrator_voice: str = "p230",
+        model_name: str = "edge-tts",
+        narrator_voice: str = "en-US-ChristopherNeural",
         male_pool: Optional[List[str]] = None,
         female_pool: Optional[List[str]] = None,
         output_dir: str = "output/audio",
     ):
         self.model_name = model_name
         self.narrator_voice = narrator_voice
-        self.male_pool = list(male_pool or ["p232", "p243", "p245", "p246"])
-        self.female_pool = list(female_pool or ["p229", "p231", "p234", "p236"])
+        self.male_pool = list(male_pool or ["en-US-GuyNeural", "en-US-EricNeural", "en-GB-RyanNeural"])
+        self.female_pool = list(female_pool or ["en-US-AriaNeural", "en-US-JennyNeural", "en-GB-SoniaNeural"])
         self.output_dir = output_dir
 
-        # Character → speaker_id cache (ensures consistency across panels)
         self._voice_map: Dict[str, str] = {}
-        self._tts = None  # lazy-loaded
 
-    # ── Factory from config ──────────────────────────────────────────
     @classmethod
     def from_config(cls, tts_cfg: Dict[str, Any]) -> "AudioEngine":
-        """Build from the ``tts:`` section of config.yaml."""
         voices = tts_cfg.get("voices", {})
         return cls(
-            model_name=tts_cfg.get("model", "tts_models/en/vctk/vits"),
-            narrator_voice=voices.get("narrator", "p230"),
-            male_pool=voices.get("male_pool", ["p232", "p243", "p245", "p246"]),
-            female_pool=voices.get("female_pool", ["p229", "p231", "p234", "p236"]),
+            model_name=tts_cfg.get("model", "edge-tts"),
+            narrator_voice=voices.get("narrator", "en-US-ChristopherNeural"),
+            male_pool=voices.get("male_pool", ["en-US-GuyNeural", "en-US-EricNeural", "en-GB-RyanNeural"]),
+            female_pool=voices.get("female_pool", ["en-US-AriaNeural", "en-US-JennyNeural", "en-GB-SoniaNeural"]),
             output_dir=tts_cfg.get("output_dir", "output/audio"),
         )
 
-    # ── TTS model loading ────────────────────────────────────────────
-    def _load_tts(self):
-        """Lazy-load the Coqui TTS model."""
-        if self._tts is not None:
-            return
-
-        if not _TTS_AVAILABLE:
-            raise ImportError(
-                "Coqui TTS not installed. Run: pip install TTS>=0.22.0"
-            )
-
-        logger.info(f"Loading TTS model: {self.model_name} …")
-        # Use GPU if available — critical for correct speaker embedding quality
-        try:
-            import torch
-            use_gpu = torch.cuda.is_available()
-        except ImportError:
-            use_gpu = False
-        if use_gpu:
-            logger.info("TTS: Using GPU for inference.")
-        else:
-            logger.warning("TTS: GPU not available, falling back to CPU. Speaker quality may be degraded.")
-        self._tts = CoquiTTS(self.model_name, gpu=use_gpu)
-        # Slow down VITS speech by 20% (length_scale > 1.0 = slower)
-        # Must be set on the model config, not passed as a kwarg to tts_to_file
-        if "vits" in self.model_name and hasattr(self._tts, "synthesizer"):
-            try:
-                self._tts.synthesizer.tts_model.length_scale = 1.2
-                logger.info("TTS: Set length_scale=1.2 for slower, more natural speech.")
-            except Exception:
-                pass  # Not critical, just a quality improvement
-        logger.info("TTS model loaded.")
-
-    # ── Voice assignment ─────────────────────────────────────────────
     def _get_voice(self, role: str, gender: str) -> str:
-        """
-        Get a consistent speaker ID for a role.
-
-        - Narrator → always the configured narrator voice.
-        - Known character → return cached voice.
-        - New character → pick from the gender-appropriate pool.
-        """
         role_norm = str(role).strip().lower()
         if role_norm == "narrator":
             return self.narrator_voice
 
-        # Return cached voice if already assigned
         if role in self._voice_map:
             return self._voice_map[role]
 
-        # Normalize gender string
         gender_norm = str(gender).strip().lower()
-
-        # Pick from pool
         pool = self.male_pool if gender_norm == "male" else self.female_pool
+        
         if pool:
             voice = random.choice(pool)
         else:
-            # Pool exhausted — fall back to narrator voice
-            logger.warning(
-                f"No voices left in {gender} pool for '{role}', "
-                f"falling back to narrator voice."
-            )
+            logger.warning(f"No voices left in {gender} pool for '{role}', falling back to narrator.")
             voice = self.narrator_voice
 
         self._voice_map[role] = voice
         logger.info(f"Assigned voice '{voice}' to character '{role}' ({gender})")
         return voice
 
-    # ── Main synthesis ───────────────────────────────────────────────
+    async _synthesize_async(self, text: str, voice: str, filepath: Path):
+        communicate = edge_tts.Communicate(text, voice)
+        # Edge-TTS natively saves as mp3, we save as tmp.mp3 then convert to wav
+        tmp_mp3 = filepath.with_suffix(".mp3")
+        await communicate.save(str(tmp_mp3))
+        
+        # Convert mp3 to wav (24kHz, mono) for standard concatenation processing later
+        audio = AudioSegment.from_mp3(str(tmp_mp3))
+        audio = audio.set_frame_rate(24000).set_channels(1)
+        audio.export(str(filepath), format="wav")
+        # Clean up mp3
+        tmp_mp3.unlink(missing_ok=True)
+
     def synthesize(
         self,
         scripts: List[PanelScript],
         output_dir: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
-        Generate ``.wav`` files for all script lines.
-
-        Parameters
-        ----------
-        scripts : list[PanelScript]
-            Output from :class:`ScriptGenerator`.
-        output_dir : str | None
-            Override output directory.
-
-        Returns
-        -------
-        dict
-            ``{"audio_dir": str, "files": list[str], "script": list[dict]}``
+        Generate ``.wav`` files for all script lines using asyncio edge-tts.
         """
-        self._load_tts()
-
         out = Path(output_dir or self.output_dir)
         out.mkdir(parents=True, exist_ok=True)
 
         all_files: List[str] = []
         script_json: List[dict] = []
 
-        for ps in scripts:
-            panel_entry = {"panel": ps.panel, "lines": []}
+        # Run the async loop to process lines synchronously in order
+        async def run_all():
+            for ps in scripts:
+                panel_entry = {"panel": ps.panel, "lines": []}
+                for j, line in enumerate(ps.lines):
+                    voice = self._get_voice(line.role, line.gender)
+                    filename = f"panel_{ps.panel:02d}_line_{j + 1:02d}.wav"
+                    filepath = out / filename
 
-            for j, line in enumerate(ps.lines):
-                voice = self._get_voice(line.role, line.gender)
-                filename = f"panel_{ps.panel:02d}_line_{j + 1:02d}.wav"
-                filepath = out / filename
+                    text = self._clean_text(line.text)
+                    if len(text) < 3:
+                        logger.warning(f"TTS: Skipping Panel {ps.panel} Line {j+1} — text too short: {text!r}")
+                        continue
 
-                # Sanitize and normalize text for TTS
-                text = self._clean_text(line.text)
-                if len(text) < 3:
-                    logger.warning(
-                        f"TTS: Skipping Panel {ps.panel} Line {j+1} — text too short: {text!r}"
-                    )
-                    continue
+                    logger.info(f"TTS: Panel {ps.panel}, Line {j + 1} [{line.role}/{voice}]: \"{text}\"")
+                    
+                    try:
+                        await self._synthesize_async(text, voice, filepath)
+                        all_files.append(str(filepath))
+                    except Exception as e:
+                        logger.error(f"TTS failed for '{text}': {e}")
+                        continue
 
-                logger.info(
-                    f"TTS: Panel {ps.panel}, Line {j + 1} "
-                    f"[{line.role}/{voice}]: \"{text}\""
-                )
+                    panel_entry["lines"].append({
+                        "role": line.role,
+                        "text": line.text,
+                        "gender": line.gender,
+                        "voice": voice,
+                        "file": filename,
+                    })
+                script_json.append(panel_entry)
 
-                try:
-                    # XTTS / Multilingual support
-                    is_xtts = "xtts" in self.model_name
-                    kwargs = {}
-                    if is_xtts:
-                        kwargs["language"] = "en"
-                        if voice.endswith(".wav"):
-                            kwargs["speaker_wav"] = voice
-                        else:
-                            kwargs["speaker"] = voice
-                    else:
-                        # VITS / VCTK - add stability parameters for cleaner voice
-                        kwargs["speaker"] = voice
-                        kwargs["noise_scale"] = 0.33
-                        kwargs["noise_scale_w"] = 0.6
-                        kwargs["length_scale"] = 1.2
+        # Execute async TTS loop
+        asyncio.run(run_all())
 
-                    self._tts.tts_to_file(
-                        text=text,
-                        file_path=str(filepath),
-                        **kwargs
-                    )
-                    all_files.append(str(filepath))
-                except Exception as e:
-                    logger.error(f"TTS failed for '{text}': {e}")
-                    continue
-
-                panel_entry["lines"].append({
-                    "role": line.role,
-                    "text": line.text,
-                    "gender": line.gender,
-                    "voice": voice,
-                    "file": filename,
-                })
-
-            script_json.append(panel_entry)
-
-        # Write full script JSON
         script_path = out / "full_script.json"
         with open(script_path, "w", encoding="utf-8") as f:
             json.dump(script_json, f, ensure_ascii=False, indent=2)
         logger.info(f"Script saved to {script_path}")
 
-        # Merge all per-panel WAVs into a single story.wav
         merged_path = self._merge_wavs(all_files, out / "story.wav")
 
         result = {
@@ -262,23 +173,11 @@ class AudioEngine:
             "script": script_json,
         }
 
-        logger.info(
-            f"✅ Generated {len(all_files)} audio files in {out}"
-        )
-        if merged_path:
-            logger.info(f"✅ Merged audio → {merged_path}")
+        logger.info(f"✅ Generated {len(all_files)} audio files in {out}")
         return result
 
-    # ── WAV merge ────────────────────────────────────────────────────
     @staticmethod
     def _merge_wavs(wav_paths: List[str], out_path: Path) -> Optional[Path]:
-        """
-        Concatenate a list of WAV files into a single WAV.
-
-        All input files must share the same sample rate, channels, and
-        sample width (guaranteed when they come from the same TTS model).
-        Returns the output path, or None if the list is empty.
-        """
         if not wav_paths:
             return None
 
@@ -298,54 +197,28 @@ class AudioEngine:
 
             return out_path
         except Exception as exc:
-            logging.getLogger(__name__).warning(
-                f"WAV merge failed: {exc}"
-            )
+            logging.getLogger(__name__).warning(f"WAV merge failed: {exc}")
             return None
 
-    # ── Utility ──────────────────────────────────────────────────────
     @staticmethod
     def _clean_text(text: str) -> str:
         """
-        Normalize text for TTS — root-cause fix for VITS phoneme corruption.
-
-        LLM output often contains invisible Unicode chars (U+00A0, U+200B, U+202F)
-        that VITS maps to deterministic 'alien-language' tokens. NFKC normalization
-        + zero-width stripping is the definitive fix for noise at sentence starts
-        and comma positions.
+        Normalize text for TTS. Edge TTS is much more robust to punctuation 
+        than VITS, but we still clean LLM artifacts.
         """
         import unicodedata
-
         if not text:
             return ""
 
-        # Step 1: NFKC normalization - collapses non-breaking/narrow spaces to ASCII.
         text = unicodedata.normalize("NFKC", text)
-
-        # Step 2: Zero-width / invisible chars that poison the VITS phoneme tokenizer.
         text = re.sub(r"[\u200B-\u200F\u2028\u2029\uFEFF\u00AD]", "", text)
-
-        # Step 3: Unify ALL whitespace variants to plain ASCII space.
         text = re.sub(r"\s", " ", text)
-
-        # Step 4: Strip role prefixes ("Narrator: Hello" -> "Hello").
         text = re.sub(r"^[A-Za-z][A-Za-z\s]{0,20}:\s*", "", text)
-
-        # Step 5: Remove brackets.
         text = re.sub(r"[\[\]\(\)]", "", text)
-
-        # Step 6: Normalize dashes to spaces (not commas - avoids pause artifacts).
         text = re.sub(r"[\u2014\u2013]+", " ", text)
         text = text.replace("--", " ")
-
-        # Step 7: Strip C0/C1 control characters.
         text = re.sub(r"[\x00-\x1F\x7F]", "", text)
-
-        # Step 8: Compress spaces.
         return re.sub(r" +", " ", text).strip()
 
-
-
     def get_voice_map(self) -> Dict[str, str]:
-        """Return the current character → voice mapping."""
         return dict(self._voice_map)
