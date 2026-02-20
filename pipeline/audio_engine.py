@@ -307,32 +307,44 @@ class AudioEngine:
     @staticmethod
     def _clean_text(text: str) -> str:
         """
-        Normalize text for TTS to prevent common noise/artifact issues.
+        Normalize text for TTS — root-cause fix for VITS phoneme corruption.
 
-        Avoids aggressive ASCII stripping which destroys VITS phoneme boundaries.
-        Replaces dashes with spaces (not commas) to prevent forced rhythmic breaks.
+        LLM output often contains invisible Unicode chars (U+00A0, U+200B, U+202F)
+        that VITS maps to deterministic 'alien-language' tokens. NFKC normalization
+        + zero-width stripping is the definitive fix for noise at sentence starts
+        and comma positions.
         """
+        import unicodedata
+
         if not text:
             return ""
 
-        # Remove "Role: text" prefix (e.g., "Narrator: Hello", "Character 1: Hello")
+        # Step 1: NFKC normalization - collapses non-breaking/narrow spaces to ASCII.
+        text = unicodedata.normalize("NFKC", text)
+
+        # Step 2: Zero-width / invisible chars that poison the VITS phoneme tokenizer.
+        text = re.sub(r"[\u200B-\u200F\u2028\u2029\uFEFF\u00AD]", "", text)
+
+        # Step 3: Unify ALL whitespace variants to plain ASCII space.
+        text = re.sub(r"\s", " ", text)
+
+        # Step 4: Strip role prefixes ("Narrator: Hello" -> "Hello").
         text = re.sub(r"^[A-Za-z][A-Za-z\s]{0,20}:\s*", "", text)
 
-        # Remove brackets (e.g., "[Scene-setting text]" -> "Scene-setting text")
+        # Step 5: Remove brackets.
         text = re.sub(r"[\[\]\(\)]", "", text)
 
-        # Normalize dashes to spaces (to avoid forced pauses and breathing noises)
-        text = re.sub(r"[—–]+", " ", text)
+        # Step 6: Normalize dashes to spaces (not commas - avoids pause artifacts).
+        text = re.sub(r"[\u2014\u2013]+", " ", text)
         text = text.replace("--", " ")
 
-        # Straighten curly quotes
-        text = text.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
-
-        # Strip only invisible control characters (preserve accents and symbols)
+        # Step 7: Strip C0/C1 control characters.
         text = re.sub(r"[\x00-\x1F\x7F]", "", text)
 
-        # Final cleanup of whitespace and trailing junk
-        return re.sub(r"\s+", " ", text).strip()
+        # Step 8: Compress spaces.
+        return re.sub(r" +", " ", text).strip()
+
+
 
     def get_voice_map(self) -> Dict[str, str]:
         """Return the current character → voice mapping."""
