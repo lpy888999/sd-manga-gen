@@ -173,29 +173,29 @@ run_story() {
 #  5 Pre-designed Stories
 # ═══════════════════════════════════════════════════════════════
 
-# Story 1 — Xianxia (Cultivation) / 4 panels
+# Story 1 — Battle of Loyalties (Xianxia/Action) / 4 panels
 run_story 1 4 \
-    "A female cultivator in elegant hanfu stands atop a misty peak, her long sleeves fluttering in the wind. She performs a hand seal, and a glowing green flying sword unsheathes from her back. She leaps onto the sword and soars through a sea of clouds towards a floating celestial palace. Thousands of golden cranes fly alongside her as she reaches the palace gate." \
+    "In a moonlit bamboo forest, a seasoned General shadows a silent Spy. They clash near a hidden stone marker, sparks flying from their blades. The Spy retreats into the canopy, then drops down for a surprise strike. The General catches the Spy's wrist, unmasking them as a former friend." \
     777
 
-# Story 2 — Palace Intrigue / 6 panels
+# Story 2 — The Cursed Sword (Fantasy) / 6 panels
 run_story 2 6 \
-    "An elegant noble lady walks through a quiet imperial garden at sunset, holding a delicate silk fan. She notices a hidden scroll tucked behind a decorative rock and carefully retrieves it. In the flickering candlelight of her chamber, she unrolls the scroll to reveal a secret map of the palace. Suddenly, a shadow falls across the paper, and she quickly hides it under her embroidery. She turns to face a mysterious guard standing in the doorway, her expression calm but guarded. They exchange a silent, meaningful look as the palace bells toll in the distance." \
+    "Deep within a glowing crystal cavern, a nimble Thief reaches for a floating jade sword. Suddenly, an Old Monk steps from the shadows, staff in hand. They duel amidst the shimmering crystals, the air humming with energy. The Thief manages to grab the hilt, but the sword flares with dark magic. The Monk uses a protective chant to shield the Thief from a sudden cave-in. They escape together as the cavern collapses behind them." \
     888
 
-# Story 3 — Wuxia (Bamboo Forest Duel) / 4 panels
+# Story 3 — Star-Crossed Duel (Wuxia) / 4 panels
 run_story 3 4 \
-    "A female warrior in red and white martial robes stands motionless in the center of a dense bamboo forest. A rain of leaves falls as an unseen assassin strikes, and she parries the blade with a silver flute. She kicks off a bamboo stalk, performing a graceful mid-air spin, her silk ribbons trailing behind. With a swift strike of her concealed dagger, she disarms the assassin, who disappears back into the emerald shadows." \
+    "Two warriors from rival clans face off on a rickety wooden bridge over a thunderous waterfall. Their blades meet in a flash of lightning, neither yielding an inch. A stray strike cuts the bridge's rope, and it begins to tilt dangerously. Reaching the shore, they look back at the broken bridge, then part ways without a word." \
     999
 
-# Story 4 — Mythology (The Phoenix) / 6 panels
+# Story 4 — Imperial Betrayal (Palace/Escape) / 6 panels
 run_story 4 6 \
-    "A maiden travels to the edge of a volcanic crater under a blood-red moon to find the legendary Fire Phoenix. She begins to play a soul-stirring melody on her guzheng, the notes echoing through the rocky canyons. The magma below begins to glow intensely, and a magnificent phoenix made of pure flame emerges, wings outstretched. The maiden stands her ground, unaffected by the heat, as the phoenix bows its head to her. The creature transforms into a glowing feather, which she carefully tucks into her hair as a protective amulet. She walks away as the first light of dawn touches the mountain peaks." \
+    "A noble lady runs through the smoke-filled corridors of a burning palace. She is cornered by soldiers, but a rogue guard suddenly turns on his allies to protect her. They fight their way to a secret passage hidden behind a massive tapestry. Escaping into the dark city streets, they look back at the inferno devouring the palace. The guard offers his cloak, and they disappear into the shadows." \
     123
 
-# Story 5 — Poetic (Moonlit Zither) / 4 panels
+# Story 5 — The Tavern Brawl (Adventurous) / 4 panels
 run_story 5 4 \
-    "Under a blooming peach tree by a moonlit lake, a young woman in light blue silk plays the zither. Soft blossoms fall onto the water's surface as her melody calms the ripples. An old friend arrives on a small wooden boat, carrying a jar of osmanthus wine and two jade cups. They sit together in silence, watching the reflection of the silver moon as the night breeze carries the scent of flowers." \
+    "Inside a dimly lit, rowdy roadside inn, a mysterious Wanderer sits alone in the corner. A group of bandits approaches, demanding his coin. The Wanderer kicks a table up as a shield, and a chaotic brawl erupts. He uses a ceramic jug and a wooden stool to disarm them with effortless precision. He walks out into the starlit night, his identity still a mystery." \
     456
 
 # ═══════════════════════════════════════════════════════════════
