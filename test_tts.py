@@ -27,8 +27,9 @@ def main():
     log.info("-----------------------")
 
     model_name = "tts_models/en/vctk/vits"
-    log.info(f"Loading {model_name}...")
-    tts = TTS(model_name, gpu=False)
+    log.info(f"Loading {model_name} on GPU...")
+    # Using gpu=True as VITS is known to have numerical instabilities on CPU
+    tts = TTS(model_name, gpu=True)
 
     speakers = getattr(tts, "speakers", [])
     log.info(f"Available speakers: {len(speakers)}")
