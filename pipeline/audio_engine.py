@@ -23,6 +23,7 @@ Usage::
 import json
 import logging
 import random
+import re
 import wave
 from pathlib import Path
 from typing import Dict, List, Optional, Any
@@ -131,15 +132,19 @@ class AudioEngine:
         - Known character → return cached voice.
         - New character → pick from the gender-appropriate pool.
         """
-        if role.lower() == "narrator":
+        role_norm = str(role).strip().lower()
+        if role_norm == "narrator":
             return self.narrator_voice
 
         # Return cached voice if already assigned
         if role in self._voice_map:
             return self._voice_map[role]
 
+        # Normalize gender string
+        gender_norm = str(gender).strip().lower()
+
         # Pick from pool
-        pool = self.male_pool if gender == "male" else self.female_pool
+        pool = self.male_pool if gender_norm == "male" else self.female_pool
         if pool:
             voice = random.choice(pool)
         else:
@@ -308,8 +313,9 @@ class AudioEngine:
         if not text:
             return ""
 
-        # Remove LLM-hallucinated role prefixes (e.g., "Narrator: Hello" -> "Hello")
-        text = re.sub(r"^(Narrator|Character|[\w\s]+)[\s:]+", "", text, flags=re.IGNORECASE)
+        # Only strip prefixes if they have a colon, or if they are explicitly Narrator/Character at the start
+        # e.g., "Narrator: Hello" -> "Hello", "Character 1: Hello" -> "Hello", "Narrator Hello" -> "Hello"
+        text = re.sub(r"^(?:(?:[A-Za-z0-9_ -]+):\s*|(?:Narrator|Character)\s+)", "", text, flags=re.IGNORECASE)
         # Remove brackets (e.g., "[Scene-setting text]" -> "Scene-setting text")
         text = text.replace("[", "").replace("]", "").replace("(", "").replace(")", "")
 

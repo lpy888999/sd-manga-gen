@@ -94,21 +94,37 @@ export OLLAMA_MODELS="/vol/bitbucket/jl10525/ollama_data"
 mkdir -p "$OLLAMA_MODELS"
 echo "   Ollama models: $OLLAMA_MODELS"
 
+# ✅ 让 Ollama 使用 Slurm 分配的 GPU
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
+export OLLAMA_NUM_GPU=999
+
+export OLLAMA_KEEP_ALIVE=0
+export OLLAMA_MAX_LOADED_MODELS=1
+
+# 尝试自动定位 CUDA 库路径以解决 0 VRAM 问题 (Imperial Doc 集群常用路径)
+# 常见的 CUDA 库路径
+CUDA_PATHS="/usr/local/cuda/lib64:/usr/lib/x86_64-linux-gnu:/usr/lib64"
+export LD_LIBRARY_PATH="${CUDA_PATHS}:${LD_LIBRARY_PATH:-}"
+
 # Generate a random port between 11435 and 15000 to avoid conflicts
 RANDOM_PORT=$((11435 + RANDOM % 3565))
 export OLLAMA_HOST="127.0.0.1:${RANDOM_PORT}"
 export OLLAMA_BASE_URL="http://127.0.0.1:${RANDOM_PORT}/v1/"
 
-echo "== Starting Ollama server (Port: ${RANDOM_PORT}) =="
-$OLLAMA serve &
+echo "== Starting Ollama server (Port: ${RANDOM_PORT}, GPU: ${CUDA_VISIBLE_DEVICES}) =="
+# 显式使用环境变量运行并将日志重定向到文件以减少 Slurm 输出噪音
+$OLLAMA serve > "${OUTPUT_BASE}/ollama_server.log" 2>&1 &
 OLLAMA_PID=$!
-sleep 5
+sleep 15
 
 $OLLAMA list || { echo "ERROR: Ollama failed to start"; kill $OLLAMA_PID 2>/dev/null; exit 1; }
 
 echo "== Pulling LLM models =="
 $OLLAMA pull qwen3:8b || echo "WARNING: failed to pull qwen3:8b"
 $OLLAMA pull qwen3-vl:4b || echo "WARNING: failed to pull qwen3-vl:4b"
+
+echo "== Verifying Ollama GPU Usage =="
+nvidia-smi
 
 
 echo ""

@@ -202,7 +202,14 @@ class SDGenerator:
             self._pipe.set_adapters(adapter_names, adapter_weights=adapter_weights)
             logger.info(f"Active LoRA adapters: {list(zip(adapter_names, adapter_weights))}")
 
-        self._pipe.to(device)
+        # Optimization for VRAM: Move components to CPU when not in use
+        if device == "cuda":
+            self._pipe.enable_model_cpu_offload()
+            torch.cuda.empty_cache()
+            logger.info("Pipeline VRAM optimization enabled: model_cpu_offload")
+        else:
+            self._pipe.to(device)
+
         logger.info(f"Pipeline ready on {device} ({dtype})")
 
     # ── Image generation ─────────────────────────────────────────────
