@@ -97,7 +97,7 @@ class AudioEngine:
         logger.info(f"Assigned voice '{voice}' to character '{role}' ({gender})")
         return voice
 
-    async _synthesize_async(self, text: str, voice: str, filepath: Path):
+    async def _synthesize_async(self, text: str, voice: str, filepath: Path):
         communicate = edge_tts.Communicate(text, voice)
         # Edge-TTS natively saves as mp3, we save as tmp.mp3 then convert to wav
         tmp_mp3 = filepath.with_suffix(".mp3")
