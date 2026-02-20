@@ -35,20 +35,14 @@ You are an expert Prompt Engineer for Stable Diffusion. You specialize in \
 converting natural language scenes into high-quality, tag-based prompts.
 
 ## Task
-Convert the provided narrative panels into technical SD prompts. You must \
-incorporate the **Character Consistency Tags** provided below into every \
-panel where the character appears.
+Convert the provided narrative panels into technical SD prompts. A reference image is provided via IP-Adapter to keep the **Protagonist** consistent.
 
 ## Constraints
 1. **Tag Format**: Use comma-separated tags.  \
    Order: [Subject], [Action], [Environment], [Shot Type], [Lighting/Effect].
-2. **Character Consistency**: You MUST include the Character Features in \
-   every prompt where the character appears.
+2. **Character Consistency**: Describe the protagonist using simple, consistent terms (e.g., "1boy" or "1girl") and refer to their key actions. The IP-Adapter will handle their specific identity.
 3. **Consistency**: Use "masterpiece, high quality, comic style" as global suffixes.
 4. **Output**: Strictly valid JSON — no markdown fences, no commentary.
-
-## Fixed Character Features (Reference)
-{character_features}
 
 ## Output JSON Format
 {{
@@ -108,7 +102,6 @@ class PromptEngineer:
     def generate(
         self,
         panels: List[str],
-        character_features: str,
     ) -> List[PanelPrompt]:
         """
         Convert narrative panel descriptions into SD prompts.
@@ -117,14 +110,12 @@ class PromptEngineer:
         ----------
         panels : list[str]
             Panel narrative texts from StoryExpander.
-        character_features : str
-            Comma-separated character tags from CharacterExtractor.
 
         Returns
         -------
         list[PanelPrompt]
         """
-        system = SYSTEM_PROMPT.format(character_features=character_features)
+        system = SYSTEM_PROMPT
 
         # Build the user message with all panels
         panel_text = "\n".join(

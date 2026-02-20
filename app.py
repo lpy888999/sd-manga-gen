@@ -56,7 +56,6 @@ def get_pipeline() -> MangaPipeline:
 # ── Core generation function ─────────────────────────────────────────
 def generate_comic(
     reference_image: str | None,
-    character_tags: str,
     prompt: str,
     panel_count: str,
     seed: int,
@@ -87,9 +86,6 @@ def generate_comic(
     # Seed: 0 or -1 = random
     actual_seed = seed if seed > 0 else None
 
-    # Character tags (empty string → None → use vision extraction)
-    tags = character_tags.strip() if character_tags else None
-
     # Use a persistent temp dir so Gradio can serve the files after return
     tmpdir = tempfile.mkdtemp(prefix="manga_")
     output_path = os.path.join(tmpdir, "comic.png")
@@ -99,7 +95,6 @@ def generate_comic(
         pipe = get_pipeline()
         result = pipe.run(
             reference_image=reference_image,
-            character_tags=tags,
             user_prompt=prompt.strip(),
             panel_count=panels,
             output_path=output_path,
@@ -134,19 +129,16 @@ def generate_comic(
 # ── Gradio UI ────────────────────────────────────────────────────────
 TITLE = "🎨 SDXL Manga Generator"
 DESCRIPTION = """\
-**Reference Image → Story Expansion → SD Prompt Engineering → Stable Diffusion + LoRA → Comic Layout**
+**Reference Image → Story Expansion → SD Prompt Engineering → Stable Diffusion + LoRA + IP-Adapter → Comic Layout**
 
-Upload a character reference image (or provide manual tags), enter a story concept, and generate a multi-panel manga page.
+Upload a character reference image, enter a story concept, and generate a multi-panel manga page.
 Enable 🔊 Audio to add per-panel voice-over (Coqui TTS) merged into a single playable track.
 """
 
 EXAMPLES = [
-    [None, "1boy, silver hair, round glasses, black trench coat",
-     "A samurai fighting a robot in the rain", "4 Panels", 42],
-    [None, "1girl, long blue hair, white uniform, katana",
-     "A girl discovers an ancient temple hidden in a bamboo forest", "6 Panels", 0],
-    [None, "1boy, spiky black hair, red scarf, mechanical arm",
-     "太空探险家在废弃空间站发现了神秘信号", "4 Panels", 0],
+    [None, "A samurai fighting a robot in the rain", "4 Panels", 42],
+    [None, "A girl discovers an ancient temple hidden in a bamboo forest", "6 Panels", 0],
+    [None, "太空探险家在废弃空间站发现了神秘信号", "4 Panels", 0],
 ]
 
 CSS = """
@@ -171,14 +163,9 @@ def build_ui() -> gr.Blocks:
             # ── Left column: Inputs ──────────────────────────────────
             with gr.Column(scale=1):
                 reference_image = gr.Image(
-                    label="📷 Character Reference Image (optional)",
+                    label="📷 Character Reference Image (Optional - IP-Adapter)",
                     type="filepath",
                     height=200,
-                )
-                character_tags = gr.Textbox(
-                    label="🏷️ Character Tags (optional, overrides image extraction)",
-                    placeholder="e.g. 1boy, silver hair, round glasses, black trench coat",
-                    lines=2,
                 )
                 prompt = gr.Textbox(
                     label="📝 Story Prompt",
@@ -230,14 +217,14 @@ def build_ui() -> gr.Blocks:
         # ── Examples ─────────────────────────────────────────────────
         gr.Examples(
             examples=EXAMPLES,
-            inputs=[reference_image, character_tags, prompt, panel_count, seed],
+            inputs=[reference_image, prompt, panel_count, seed],
             label="💡 Example Prompts",
         )
 
         # ── Wire up ─────────────────────────────────────────────────
         generate_btn.click(
             fn=generate_comic,
-            inputs=[reference_image, character_tags, prompt, panel_count, seed, enable_audio],
+            inputs=[reference_image, prompt, panel_count, seed, enable_audio],
             outputs=[output_image, status, audio_output],
         )
 

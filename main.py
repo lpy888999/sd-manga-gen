@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
         epilog="""\
 Examples:
   python main.py -r character.png -p "A samurai duels a robot in the rain"
-  python main.py --character-tags "1girl, red hair, school uniform" -p "校园日常" --panels 6
+  python main.py -p "校园日常" --panels 6
   python main.py -r ref.png -p "宇宙探险" --seed 42 -o output/space_comic.png
 """,
     )
@@ -52,19 +52,12 @@ Examples:
         help="Story concept / idea to expand into a comic",
     )
 
-    # ── Character source (one of these) ──────────────────────────────
-    char_group = parser.add_mutually_exclusive_group()
-    char_group.add_argument(
+    # ── Character source ─────────────────────────────────────────────
+    parser.add_argument(
         "-r", "--reference",
         type=str,
         default=None,
         help="Path to character reference image (PNG/JPG/WEBP)",
-    )
-    char_group.add_argument(
-        "--character-tags",
-        type=str,
-        default=None,
-        help='Manual SD character tags, e.g. "1boy, silver hair, black coat"',
     )
 
     # ── Optional ─────────────────────────────────────────────────────
@@ -136,7 +129,6 @@ def main():
     log.info("=" * 60)
     log.info(f"  Prompt:     {args.prompt}")
     log.info(f"  Reference:  {args.reference or '(none)'}")
-    log.info(f"  Char tags:  {args.character_tags or '(auto-extract)'}")
     log.info(f"  Panels:     {args.panels or 'auto'}")
     log.info(f"  Seed:       {args.seed or 'random'}")
     log.info(f"  Output:     {args.output}")
@@ -156,7 +148,6 @@ def main():
 
     output = pipeline.run(
         reference_image=args.reference,
-        character_tags=args.character_tags,
         user_prompt=args.prompt,
         panel_count=args.panels,
         output_path=args.output,

@@ -64,6 +64,8 @@ class SDGenerator:
         Default panel resolution.
     seed : int | None
         Global seed for reproducibility.  ``None`` = random.
+    ip_adapter : Dict[str, Any] | None
+        Configuration for IP-Adapter (model_id, subfolder, weight_name, scale).
     """
 
     def __init__(
@@ -75,6 +77,7 @@ class SDGenerator:
         default_width: int = 768,
         default_height: int = 512,
         seed: Optional[int] = None,
+        ip_adapter: Optional[Dict[str, Any]] = None,
     ):
         self.model_path = model_path
         self.lora_configs = lora_configs or []
@@ -83,6 +86,7 @@ class SDGenerator:
         self.default_width = default_width
         self.default_height = default_height
         self.seed = seed
+        self.ip_adapter = ip_adapter
 
         self._pipe = None  # lazy-loaded
 
@@ -128,6 +132,7 @@ class SDGenerator:
             default_width=panel_size.get("width", 768) if isinstance(panel_size, dict) else 768,
             default_height=panel_size.get("height", 512) if isinstance(panel_size, dict) else 512,
             seed=sd_cfg.get("seed"),
+            ip_adapter=sd_cfg.get("ip_adapter"),
         )
 
     # ── LoRA auto-discovery ──────────────────────────────────────────
@@ -202,6 +207,22 @@ class SDGenerator:
             self._pipe.set_adapters(adapter_names, adapter_weights=adapter_weights)
             logger.info(f"Active LoRA adapters: {list(zip(adapter_names, adapter_weights))}")
 
+        # ── Load IP-Adapter ──────────────────────────────────────────
+        if self.ip_adapter and self.ip_adapter.get("enable", False):
+            ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
+            sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
+            w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
+            scale = self.ip_adapter.get("scale", 0.7)
+
+            logger.info(f"Loading IP-Adapter: {ip_id} ({w_name}), scale={scale}")
+            self._pipe.load_ip_adapter(
+                ip_id,
+                subfolder=sub_f,
+                weight_name=w_name,
+            )
+            self._pipe.set_ip_adapter_scale(scale)
+            logger.info("IP-Adapter loaded successfully.")
+
         # Optimization for VRAM: Move components to CPU when not in use
         if device == "cuda":
             self._pipe.enable_model_cpu_offload()
@@ -220,6 +241,7 @@ class SDGenerator:
         width: Optional[int] = None,
         height: Optional[int] = None,
         seed: Optional[int] = None,
+        ip_adapter_image: Optional[Image.Image] = None,
     ) -> Image.Image:
         """
         Generate a single panel image.
@@ -253,15 +275,21 @@ class SDGenerator:
         logger.info(f"Generating image ({w}×{h}) …")
         logger.debug(f"  Prompt: {prompt[:200]}")
 
-        result = self._pipe(
-            prompt=prompt,
-            negative_prompt=negative_prompt or None,
-            width=w,
-            height=h,
-            guidance_scale=self.guidance_scale,
-            num_inference_steps=self.num_inference_steps,
-            generator=generator,
-        )
+        kwargs = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt or None,
+            "width": w,
+            "height": h,
+            "guidance_scale": self.guidance_scale,
+            "num_inference_steps": self.num_inference_steps,
+            "generator": generator,
+        }
+
+        if ip_adapter_image is not None and getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None:
+            # Only add if IP-Adapter is actually loaded (checked via encoder_hid_proj)
+            kwargs["ip_adapter_image"] = ip_adapter_image
+
+        result = self._pipe(**kwargs)
 
         image = result.images[0]
         logger.info("Panel generated successfully.")
@@ -271,6 +299,7 @@ class SDGenerator:
         self,
         panel_prompts: list,
         seed_offset: int = 0,
+        ip_adapter_image: Optional[Image.Image] = None,
     ) -> List[Image.Image]:
         """
         Generate images for all panels.
@@ -297,6 +326,7 @@ class SDGenerator:
                 prompt=pp.final_prompt,
                 negative_prompt=pp.negative_prompt,
                 seed=panel_seed,
+                ip_adapter_image=ip_adapter_image,
             )
             images.append(img)
 

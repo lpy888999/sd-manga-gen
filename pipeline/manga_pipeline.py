@@ -28,7 +28,6 @@ from typing import List, Optional, Dict, Any
 import yaml
 from PIL import Image
 
-from pipeline.character_extractor import CharacterExtractor
 from pipeline.story_expander import StoryExpander
 from pipeline.prompt_engineer import PromptEngineer, PanelPrompt
 from pipeline.sd_generator import SDGenerator, LoRAConfig
@@ -59,11 +58,6 @@ class MangaPipeline:
         tts_cfg = config.get("tts", {})
 
         # ── Build sub-components ─────────────────────────────────────
-        self.extractor = CharacterExtractor(
-            vision_model_name=llm_cfg.get("vision_model_name", "gemma3:12b"),
-            temperature=llm_cfg.get("temperature", 0.3),
-        )
-
         self.story_expander = StoryExpander(
             model_name=llm_cfg.get("model_name", "qwen3-coder-next:cloud"),
             temperature=llm_cfg.get("temperature", 0.7),
@@ -135,7 +129,6 @@ class MangaPipeline:
     def run(
         self,
         reference_image: Optional[str] = None,
-        character_tags: Optional[str] = None,
         user_prompt: str = "",
         panel_count: Optional[int] = None,
         output_path: str = "output/comic.png",
@@ -149,9 +142,7 @@ class MangaPipeline:
         Parameters
         ----------
         reference_image : str | None
-            Path to character reference image.
-        character_tags : str | None
-            Manual character tags (skips vision extraction).
+            Path to character reference image for IP-Adapter consistency.
         user_prompt : str
             Story concept.
         panel_count : int | None
@@ -173,20 +164,6 @@ class MangaPipeline:
         t0 = time.time()
         do_audio = enable_audio if enable_audio is not None else self.tts_enabled
 
-        # ── Step 0: Character feature extraction ─────────────────────
-        if character_tags:
-            logger.info(f"Using manual character tags: {character_tags}")
-            features = character_tags
-        elif reference_image:
-            logger.info("=" * 60)
-            logger.info("STEP 0 · Character Feature Extraction")
-            logger.info("=" * 60)
-            features = self.extractor.extract(reference_image)
-        else:
-            features = ""
-            logger.warning("No reference image or character tags provided. "
-                           "Character consistency will be limited.")
-
         # ── Step 1: Story expansion ──────────────────────────────────
         logger.info("=" * 60)
         logger.info("STEP 1 · Story Expansion")
@@ -203,8 +180,7 @@ class MangaPipeline:
         logger.info("STEP 2 · Prompt Engineering")
         logger.info("=" * 60)
         panel_prompts = self.prompt_engineer.generate(
-            panels=panels,
-            character_features=features,
+            panels=panels
         )
         for pp in panel_prompts:
             logger.info(f"  Panel {pp.panel_number}: {pp.final_prompt[:120]}…")
@@ -228,12 +204,20 @@ class MangaPipeline:
 
         # ── Step 3: Image generation ─────────────────────────────────
         logger.info("=" * 60)
-        logger.info("STEP 3 · Image Generation (SD + LoRA)")
+        logger.info("STEP 3 · Image Generation (SD + LoRA + IP-Adapter)")
         logger.info("=" * 60)
         if seed is not None:
             self.sd_generator.seed = seed
 
-        images = self.sd_generator.generate_panels(panel_prompts)
+        ip_image = None
+        if reference_image and Path(reference_image).exists():
+            logger.info(f"Loading reference image for IP-Adapter: {reference_image}")
+            ip_image = Image.open(reference_image).convert("RGB")
+
+        images = self.sd_generator.generate_panels(
+            panel_prompts,
+            ip_adapter_image=ip_image,
+        )
 
         # ── Step 4: Layout composition ───────────────────────────────
         logger.info("=" * 60)

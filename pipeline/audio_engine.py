@@ -220,8 +220,11 @@ class AudioEngine:
                         else:
                             kwargs["speaker"] = voice
                     else:
-                        # VITS / VCTK
+                        # VITS / VCTK - add stability parameters for cleaner voice
                         kwargs["speaker"] = voice
+                        kwargs["noise_scale"] = 0.33
+                        kwargs["noise_scale_w"] = 0.6
+                        kwargs["length_scale"] = 1.2
 
                     self._tts.tts_to_file(
                         text=text,
@@ -305,35 +308,31 @@ class AudioEngine:
     def _clean_text(text: str) -> str:
         """
         Normalize text for TTS to prevent common noise/artifact issues.
-        
-        1. Strips roles/metadata like 'Narrator:' or '[Samurai]'.
-        2. Replaces problematic non-ASCII punctuation (em-dashes, curly quotes).
-        3. Removes non-printable or suspicious characters.
+
+        Avoids aggressive ASCII stripping which destroys VITS phoneme boundaries.
+        Replaces dashes with spaces (not commas) to prevent forced rhythmic breaks.
         """
         if not text:
             return ""
 
-        # Only strip prefixes if they have a colon, or if they are explicitly Narrator/Character at the start
-        # e.g., "Narrator: Hello" -> "Hello", "Character 1: Hello" -> "Hello", "Narrator Hello" -> "Hello"
-        text = re.sub(r"^(?:(?:[A-Za-z0-9_ -]+):\s*|(?:Narrator|Character)\s+)", "", text, flags=re.IGNORECASE)
-        # Remove brackets (e.g., "[Scene-setting text]" -> "Scene-setting text")
-        text = text.replace("[", "").replace("]", "").replace("(", "").replace(")", "")
+        # Remove "Role: text" prefix (e.g., "Narrator: Hello", "Character 1: Hello")
+        text = re.sub(r"^[A-Za-z][A-Za-z\s]{0,20}:\s*", "", text)
 
-        # Normalize punctuation that causes noise in VITS
-        # Em-dashes and en-dashes -> Replace with comma for a natural pause
-        text = text.replace("—", ", ").replace("–", ", ").replace("--", ", ")
-        
-        # Curly quotes -> Straight quotes
+        # Remove brackets (e.g., "[Scene-setting text]" -> "Scene-setting text")
+        text = re.sub(r"[\[\]\(\)]", "", text)
+
+        # Normalize dashes to spaces (to avoid forced pauses and breathing noises)
+        text = re.sub(r"[—–]+", " ", text)
+        text = text.replace("--", " ")
+
+        # Straighten curly quotes
         text = text.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
-        
-        # Strip everything except basic English characters and punctuation
-        # (aggressive non-ASCII cleanup)
-        text = "".join(c for c in text if c.isprintable() and (ord(c) < 128 or c in ".,!?;:'\" "))
+
+        # Strip only invisible control characters (preserve accents and symbols)
+        text = re.sub(r"[\x00-\x1F\x7F]", "", text)
 
         # Final cleanup of whitespace and trailing junk
-        text = re.sub(r"\s+", " ", text).strip()
-        
-        return text
+        return re.sub(r"\s+", " ", text).strip()
 
     def get_voice_map(self) -> Dict[str, str]:
         """Return the current character → voice mapping."""
