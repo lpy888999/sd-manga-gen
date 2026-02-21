@@ -286,7 +286,8 @@ class SDGenerator:
         if "xl" in self.model_path.lower() and (w < 1024 and h < 1024):
             logger.warning(f"Resolution {w}x{h} is too low for SDXL. Upscaling to ~1024 primary edge.")
             ratio = 1024 / max(w, h)
-            w, h = int(w * ratio), int(h * ratio)
+            w = round((w * ratio) / 8) * 8
+            h = round((h * ratio) / 8) * 8
 
         s = seed if seed is not None else self.seed
 
