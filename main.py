@@ -113,7 +113,11 @@ def setup_logging(verbose: bool = False):
         level=level,
         format="%(asctime)s │ %(name)-30s │ %(levelname)-5s │ %(message)s",
         datefmt="%H:%M:%S",
+        force=True, # MUST FORCE OVERRIDE to prevent diffusers/transformers hijacking
     )
+    
+    # Explicitly set the root logger level
+    logging.root.setLevel(level)
     # Silence noisy libraries
     for lib in ("httpx", "httpcore", "urllib3", "diffusers", "transformers"):
         logging.getLogger(lib).setLevel(logging.WARNING)
