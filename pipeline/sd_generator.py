@@ -232,6 +232,12 @@ class SDGenerator:
         is_xl = "xl" in self.model_path.lower() or "sdxl" in self.model_path.lower()
         I2IPipeClass = StableDiffusionXLImg2ImgPipeline if is_xl else StableDiffusionImg2ImgPipeline
         self._pipe_i2i = I2IPipeClass(**self._pipe.components)
+        
+        # Ensure Img2Img pipeline uses the exact same Karras scheduler
+        self._pipe_i2i.scheduler = DPMSolverMultistepScheduler.from_config(
+            self._pipe.scheduler.config,
+            use_karras_sigmas=True,
+        )
 
         # Optimization for VRAM: Move components to CPU when not in use
         if device == "cuda":
@@ -286,12 +292,15 @@ class SDGenerator:
         logger.info(f"Generating image ({w}×{h}) …")
         logger.debug(f"  Prompt: {prompt[:200]}")
 
+        # Stage 1 CFG should be lower to avoid structural stiffness
+        t2i_cfg = max(self.guidance_scale - 1.5, 5.0)  
+
         kwargs = {
             "prompt": prompt,
             "negative_prompt": negative_prompt or None,
             "width": w,
             "height": h,
-            "guidance_scale": self.guidance_scale,
+            "guidance_scale": t2i_cfg,
             "num_inference_steps": self.num_inference_steps,
             "generator": generator,
         }
@@ -312,26 +321,46 @@ class SDGenerator:
 
             if protagonist_box and len(protagonist_box) == 4:
                 # ── Phase 1: Text2Img (Pure Scene/Layout) ──
+                # CRITICAL: We do NOT pass `ip_adapter_image` or set scale to 0.0 here.
+                # Diffusers UNet raises ValueError if `encoder_hid_dim_type`='ip_image_proj'
+                # but no `image_embeds` is provided. We must completely unload it for Stage 1.
                 logger.info("Stage 1: Text2Img generation (Pure Scene/Layout)")
-                self._pipe.set_ip_adapter_scale(0.0)
                 
-                # The UNet structurally expects ip_adapter_image when the adapter is loaded,
-                # even if scale is 0.0.
+                if hasattr(self._pipe, "unload_ip_adapter"):
+                    try:
+                        self._pipe.unload_ip_adapter()
+                    except Exception as e:
+                        logger.warning(f"Failed to unload IP-adapter: {e}")
+                        
                 t2i_kwargs = kwargs.copy()
-                t2i_kwargs["ip_adapter_image"] = ip_adapter_image
-                
                 base_image = self._pipe(**t2i_kwargs).images[0]
                 
                 # ── Phase 2: Img2Img (Injecting IP-Adapter Appearance) ──
                 logger.info("Stage 2: Img2Img generation (Injecting IP-Adapter Appearance)")
-                scale = self.ip_adapter.get("scale", 0.5) if hasattr(self, "ip_adapter") and self.ip_adapter else 0.5
+                
+                # Reload IP adapter for the Img2Img pipeline (it shares the UNet, so we load it on base pipe)
+                if self.ip_adapter and self.ip_adapter.get("enable", False):
+                    ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
+                    sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
+                    w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
+                    self._pipe.load_ip_adapter(ip_id, subfolder=sub_f, weight_name=w_name)
+                
+                # Use a balanced scale/strength combo to prevent localized texture overwrites
+                scale = self.ip_adapter.get("scale", 0.4) if hasattr(self, "ip_adapter") and self.ip_adapter else 0.4
+                img2img_strength = 0.3
+                
                 self._pipe_i2i.set_ip_adapter_scale(scale)
                 
                 i2i_kwargs = kwargs.copy()
                 del i2i_kwargs["width"]
                 del i2i_kwargs["height"]
+                # CRITICAL: Do not pass the generator here to allow fresh noise resampling
+                if "generator" in i2i_kwargs:
+                    del i2i_kwargs["generator"]
+                    
+                i2i_kwargs["guidance_scale"] = max(self.guidance_scale - 2.5, 4.0) # Lower CFG for img2img phase
                 i2i_kwargs["image"] = base_image
-                i2i_kwargs["strength"] = 0.35  # Light denoise to preserve layout
+                i2i_kwargs["strength"] = img2img_strength 
                 i2i_kwargs["ip_adapter_image"] = ip_adapter_image
                 
                 mask = Image.new("L", (w, h), 0)
@@ -353,15 +382,26 @@ class SDGenerator:
                 
         # ── Fallback (No IP-Adapter) ──
         logger.info("Generating standard Text2Img panel")
-        if hasattr(self._pipe, "set_ip_adapter_scale"):
-            self._pipe.set_ip_adapter_scale(0.0)
-            
+        
+        # Ensure ip_adapter is unloaded from UNet for pure text2img if it was previously loaded
+        if hasattr(self._pipe, "unload_ip_adapter"):
+            try:
+                self._pipe.unload_ip_adapter()
+                logger.debug("Unloaded IP-adapter for standard Text2Img pass.")
+            except Exception as e:
+                logger.warning(f"Failed to unload IP-adapter: {e}")
+
         t2i_kwargs = kwargs.copy()
-        if ip_adapter_image is not None and getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None:
-            t2i_kwargs["ip_adapter_image"] = ip_adapter_image
-            
         result = self._pipe(**t2i_kwargs)
         image = result.images[0]
+        
+        # Reload it for subsequent calls if enabled
+        if self.ip_adapter and self.ip_adapter.get("enable", False):
+            ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
+            sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
+            w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
+            self._pipe.load_ip_adapter(ip_id, subfolder=sub_f, weight_name=w_name)
+
         logger.info("Panel generated successfully.")
         return image
 
