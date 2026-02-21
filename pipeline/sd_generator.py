@@ -187,9 +187,12 @@ class SDGenerator:
         )
 
         # Use DPM++ 2M Karras scheduler for better convergence
+        # We explicitly set algorithm_type="dpmsolver++" to avoid conflict with "deis"
+        # which can be present in some community models (like DreamShaper).
         self._pipe.scheduler = DPMSolverMultistepScheduler.from_config(
             self._pipe.scheduler.config,
             use_karras_sigmas=True,
+            algorithm_type="dpmsolver++",
         )
 
         # ── Load LoRA adapters ───────────────────────────────────────
@@ -236,6 +239,7 @@ class SDGenerator:
         self._pipe_i2i.scheduler = DPMSolverMultistepScheduler.from_config(
             self._pipe.scheduler.config,
             use_karras_sigmas=True,
+            algorithm_type="dpmsolver++",
         )
 
         # Optimization for VRAM
