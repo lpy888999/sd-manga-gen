@@ -31,7 +31,7 @@ sd:
 
   # IP-Adapter — keeps character consistent based on reference image
   ip_adapter:
-    enable: true
+    enable: false
     model_id: "h94/IP-Adapter"
     subfolder: "sdxl_models"
     weight_name: "ip-adapter_sdxl.bin"

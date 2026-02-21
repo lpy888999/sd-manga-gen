@@ -313,7 +313,7 @@ class SDGenerator:
             "negative_prompt": negative_prompt or None,
             "width": w,
             "height": h,
-            "guidance_scale": max(self.guidance_scale - 1.5, 5.0),
+            "guidance_scale": self.guidance_scale if not has_ip else max(self.guidance_scale - 1.5, 5.0),
             "num_inference_steps": self.num_inference_steps,
             "generator": generator,
         }
