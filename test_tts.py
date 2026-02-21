@@ -2,18 +2,40 @@
 import sys
 import logging
 import argparse
-from TTS.api import TTS
+import asyncio
+import edge_tts
+from pydub import AudioSegment
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("tts-test")
 
+async def test_edge_tts(text: str, speaker: str, out_file: str):
+    log.info(f"Synthesizing text: '{text}' with speaker {speaker} to {out_file}")
+    
+    communicate = edge_tts.Communicate(text, speaker)
+    
+    # Edge-TTS saves as MP3 natively
+    tmp_mp3 = Path(out_file).with_suffix(".mp3")
+    await communicate.save(str(tmp_mp3))
+    
+    # Convert to WAV to match pipeline expectations
+    audio = AudioSegment.from_mp3(str(tmp_mp3))
+    audio = audio.set_frame_rate(24000).set_channels(1)
+    audio.export(out_file, format="wav")
+    
+    # Clean up
+    tmp_mp3.unlink(missing_ok=True)
+    log.info(f"Successfully generated {out_file}")
+
 def main():
-    parser = argparse.ArgumentParser(description="Test Coqui TTS with specific parameters.")
+    parser = argparse.ArgumentParser(description="Test Edge TTS with specific parameters.")
     parser.add_argument("--text", type=str, default="Storms birth power.", help="Text to synthesize")
-    parser.add_argument("--speaker", type=str, default="p230", help="Speaker ID")
+    parser.add_argument("--speaker", type=str, default="en-US-ChristopherNeural", help="Speaker ID")
     parser.add_argument("--out", type=str, default="debug.wav", help="Output file")
     args = parser.parse_args()
 
+    # We do a Unicode debug print to verify text cleanliness just in case
     def debug_unicode(text: str):
         import unicodedata
         log.info(f"RAW TEXT: {repr(text)}")
@@ -26,64 +48,16 @@ def main():
     debug_unicode(args.text)
     log.info("-----------------------")
 
-    model_name = "tts_models/en/vctk/vits"
-    log.info(f"Loading {model_name} on GPU...")
-    # Using gpu=True as VITS is known to have numerical instabilities on CPU
-    tts = TTS(model_name, gpu=True)
+    # Run the single Edge-TTS test
+    asyncio.run(test_edge_tts(args.text, args.speaker, args.out))
 
-    speakers = getattr(tts, "speakers", [])
-    log.info(f"Available speakers: {len(speakers)}")
-    if args.speaker not in speakers and speakers:
-        log.warning(f"Speaker '{args.speaker}' not found. Using {speakers[0]}")
-        args.speaker = speakers[0]
+    # Also test an alternate speaker to ensure parameter passing works
+    alt_speaker = "en-US-AriaNeural"
+    alt_out = str(Path(args.out).with_name("debug_alt.wav"))
+    log.info(f"--- Running alternate speaker test ({alt_speaker}) ---")
+    asyncio.run(test_edge_tts(args.text, alt_speaker, alt_out))
 
-    # Test 1: Current Settings
-    log.info("Test 1: Current settings (noise=0.33, w=0.6)")
-    tts.tts_to_file(
-        text=args.text,
-        file_path="test1_current.wav",
-        speaker=args.speaker,
-        noise_scale=0.33,
-        noise_scale_w=0.6,
-        length_scale=1.2
-    )
-
-    # Test 2: Ultra low noise (Robotic but should be clean)
-    log.info("Test 2: Ultra low noise (noise=0.01, w=0.01)")
-    tts.tts_to_file(
-        text=args.text,
-        file_path="test2_zero_noise.wav",
-        speaker=args.speaker,
-        noise_scale=0.01,
-        noise_scale_w=0.01,
-        length_scale=1.2
-    )
-
-    # Test 3: Different Speaker (Checking if p230 is the culprit)
-    alt_speaker = "p225" if "p225" in speakers else (speakers[1] if len(speakers) > 1 else args.speaker)
-    log.info(f"Test 3: Different speaker ({alt_speaker})")
-    tts.tts_to_file(
-        text=args.text,
-        file_path="test3_alt_speaker.wav",
-        speaker=alt_speaker,
-        noise_scale=0.33,
-        noise_scale_w=0.6,
-        length_scale=1.2
-    )
-
-    # Test 4: No commas (Checking if punctuation is the trigger)
-    clean_text = args.text.replace(",", " ")
-    log.info("Test 4: No commas")
-    tts.tts_to_file(
-        text=clean_text,
-        file_path="test4_no_commas.wav",
-        speaker=args.speaker,
-        noise_scale=0.33,
-        noise_scale_w=0.6,
-        length_scale=1.2
-    )
-
-    log.info("All 4 test variants generated!")
+    log.info("Done!")
 
 if __name__ == "__main__":
     main()

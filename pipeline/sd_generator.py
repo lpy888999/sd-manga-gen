@@ -22,7 +22,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Dict, Any
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 logger = logging.getLogger(__name__)
 
@@ -242,6 +242,7 @@ class SDGenerator:
         height: Optional[int] = None,
         seed: Optional[int] = None,
         ip_adapter_image: Optional[Image.Image] = None,
+        layouts: Optional[List[Dict[str, Any]]] = None,
     ) -> Image.Image:
         """
         Generate a single panel image.
@@ -285,9 +286,40 @@ class SDGenerator:
             "generator": generator,
         }
 
+        cross_attention_kwargs = {}
         if ip_adapter_image is not None and getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None:
             # Only add if IP-Adapter is actually loaded (checked via encoder_hid_proj)
             kwargs["ip_adapter_image"] = ip_adapter_image
+
+            if layouts is not None and len(layouts) > 0:
+                protagonist_box = None
+                for lay in layouts:
+                    lbl = str(lay.get("label", "")).lower()
+                    if "protagonist" in lbl or "hero" in lbl or "main" in lbl:
+                        protagonist_box = lay.get("box")
+                        break
+                
+                # If exactly 1 character is detected and not explicitly labeled protagonist, assume it's them.
+                if protagonist_box is None and len(layouts) == 1:
+                    protagonist_box = layouts[0].get("box")
+
+                if protagonist_box and len(protagonist_box) == 4:
+                    mask = Image.new("L", (w, h), 0)
+                    x_min = int(protagonist_box[0] * w)
+                    y_min = int(protagonist_box[1] * h)
+                    x_max = int(protagonist_box[2] * w)
+                    y_max = int(protagonist_box[3] * h)
+                    draw = ImageDraw.Draw(mask)
+                    draw.rectangle([x_min, y_min, x_max, y_max], fill=255)
+                    logger.info(f"Applying IP-Adapter mask for protagonist box: {protagonist_box}")
+                    cross_attention_kwargs["ip_adapter_masks"] = [mask]
+                else:
+                    logger.info("Protagonist not found in multi-character layout. Disabling IP-Adapter for this panel to prevent feature bleeding.")
+                    mask = Image.new("L", (w, h), 0)
+                    cross_attention_kwargs["ip_adapter_masks"] = [mask]
+
+        if cross_attention_kwargs:
+            kwargs["cross_attention_kwargs"] = cross_attention_kwargs
 
         result = self._pipe(**kwargs)
 
@@ -327,6 +359,7 @@ class SDGenerator:
                 negative_prompt=pp.negative_prompt,
                 seed=panel_seed,
                 ip_adapter_image=ip_adapter_image,
+                layouts=getattr(pp, "layouts", []),
             )
             images.append(img)
 

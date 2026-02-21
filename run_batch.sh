@@ -152,7 +152,7 @@ run_story() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     python main.py \
-        --reference "tests/fixtures/meining.jpg" \
+        --reference "tests/fixtures/reference_character.png" \
         -p "$PROMPT" \
         --panels "$PANELS" \
         --seed "$SEED" \
@@ -170,32 +170,32 @@ run_story() {
 }
 
 # ═══════════════════════════════════════════════════════════════
-#  5 Pre-designed Stories
+#  5 Pre-designed Stories (Ninja/Shinobi Theme)
 # ═══════════════════════════════════════════════════════════════
 
-# Story 1 — Battle of Loyalties (Xianxia/Action) / 4 panels
+# Story 1 — Midnight Duel (Action) / 4 panels
 run_story 1 4 \
-    "In a moonlit bamboo forest, a seasoned General shadows a silent Spy. They clash near a hidden stone marker, sparks flying from their blades. The Spy retreats into the canopy, then drops down for a surprise strike. The General catches the Spy's wrist, unmasking them as a former friend." \
+    "The protagonist ninja stands on a tiled roof under a full moon. An enemy shinobi in grey armor suddenly drops from the shadows with a kunai. They clash mid-air, sparks flying. The protagonist lands gracefully while the enemy retreats into the darkness." \
     777
 
-# Story 2 — The Cursed Sword (Fantasy) / 6 panels
+# Story 2 — Hidden Village Training (Daily/Training) / 6 panels
 run_story 2 6 \
-    "Deep within a glowing crystal cavern, a nimble Thief reaches for a floating jade sword. Suddenly, an Old Monk steps from the shadows, staff in hand. They duel amidst the shimmering crystals, the air humming with energy. The Thief manages to grab the hilt, but the sword flares with dark magic. The Monk uses a protective chant to shield the Thief from a sudden cave-in. They escape together as the cavern collapses behind them." \
+    "The protagonist ninja practices throwing shuriken at a wooden target in a forest clearing. A stern sensei with a scarred face watches from the sidelines. The protagonist misses the center and looks frustrated. The sensei walks over and gently corrects the protagonist's stance. They both throw at once, hitting the bullseye together. They share a small smile." \
     888
 
-# Story 3 — Star-Crossed Duel (Wuxia) / 4 panels
+# Story 3 — Secret Rendezvous (Romance/Casual) / 4 panels
 run_story 3 4 \
-    "Two warriors from rival clans face off on a rickety wooden bridge over a thunderous waterfall. Their blades meet in a flash of lightning, neither yielding an inch. A stray strike cuts the bridge's rope, and it begins to tilt dangerously. Reaching the shore, they look back at the broken bridge, then part ways without a word." \
+    "The protagonist ninja sits on a high bridge, looking at the sunset. A male companion in dark shinobi attire joins, carrying a small paper bag of steamed buns. They sit together, sharing the food. As they talk, the companion reaches out to brush a stray leaf from the protagonist's hair." \
     999
 
-# Story 4 — Imperial Betrayal (Palace/Escape) / 6 panels
+# Story 4 — Forest Infiltration (Adventure) / 6 panels
 run_story 4 6 \
-    "A noble lady runs through the smoke-filled corridors of a burning palace. She is cornered by soldiers, but a rogue guard suddenly turns on his allies to protect her. They fight their way to a secret passage hidden behind a massive tapestry. Escaping into the dark city streets, they look back at the inferno devouring the palace. The guard offers his cloak, and they disappear into the shadows." \
+    "The protagonist ninja is crouching in high grass, spying on a heavily guarded gate. The partner, a large ninja with a giant scroll on his back, signals that the coast is clear. They move like ghosts through the trees. Suddenly, a guard dog barks in their direction. They freeze as a guard walks past their hiding spot. They successfully leap over the high wall together." \
     123
 
-# Story 5 — The Tavern Brawl (Adventurous) / 4 panels
+# Story 5 — The Mission Briefing (Mission/Serious) / 4 panels
 run_story 5 4 \
-    "Inside a dimly lit, rowdy roadside inn, a mysterious Wanderer sits alone in the corner. A group of bandits approaches, demanding his coin. The Wanderer kicks a table up as a shield, and a chaotic brawl erupts. He uses a ceramic jug and a wooden stool to disarm them with effortless precision. He walks out into the starlit night, his identity still a mystery." \
+    "Inside a dimly lit room, the protagonist ninja looks at a secret map unrolled on a low table. An elder ninja with white hair points to a hidden fortress marked in red. A younger recruit stands by the door, holding a flickering torch. The protagonist nods, preparing for the upcoming mission." \
     456
 
 # ═══════════════════════════════════════════════════════════════

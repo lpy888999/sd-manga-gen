@@ -31,7 +31,7 @@ sd:
 
   # IP-Adapter — keeps character consistent based on reference image
   ip_adapter:
-    enable: false
+    enable: true
     model_id: "h94/IP-Adapter"
     subfolder: "sdxl_models"
     weight_name: "ip-adapter_sdxl.bin"
@@ -86,4 +86,3 @@ tts:
     female_pool: ["en-US-AriaNeural", "en-US-JennyNeural", "en-GB-SoniaNeural", "en-AU-NatashaNeural"]
 
   output_dir: "output/audio"
-

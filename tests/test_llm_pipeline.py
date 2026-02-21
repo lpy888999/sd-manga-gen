@@ -30,14 +30,11 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 import yaml
-from pipeline.character_extractor import CharacterExtractor
 from pipeline.story_expander import StoryExpander
 from pipeline.prompt_engineer import PromptEngineer
 
 # ── Constants ────────────────────────────────────────────────────────
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
-# DEFAULT_REF_IMAGE = FIXTURES_DIR / "reference_character.png"
-DEFAULT_REF_IMAGE = FIXTURES_DIR / "meining.jpg"
 
 # Fixed test prompts — deliberately short (→ 4 panels) and long (→ 6 panels)
 TEST_PROMPTS = {
@@ -77,34 +74,7 @@ def sub_divider(title: str):
     print(f"{'─' * 50}")
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  STEP 0 · Character Feature Extraction
-# ═══════════════════════════════════════════════════════════════════
-def test_character_extraction(config: dict, image_path: str) -> str:
-    divider("STEP 0 · Character Feature Extraction (Vision LLM)")
 
-    llm_cfg = config.get("llm", {})
-    extractor = CharacterExtractor(
-        vision_model_name=llm_cfg.get("vision_model_name", "gemma3:12b"),
-        temperature=0.3,
-    )
-
-    print(f"  📷 Reference image: {image_path}")
-    print(f"  🤖 Vision model:    {llm_cfg.get('vision_model_name', 'gemma3:12b')}")
-    print()
-
-    t0 = time.time()
-    tags = extractor.extract(image_path)
-    elapsed = time.time() - t0
-
-    print(f"  ✅ Extracted tags ({elapsed:.1f}s):")
-    print(f"  ┌─────────────────────────────────────────────────")
-    print(f"  │ {tags}")
-    print(f"  └─────────────────────────────────────────────────")
-    return tags
-
-
-# ═══════════════════════════════════════════════════════════════════
 #  STEP 1 · Story Expansion
 # ═══════════════════════════════════════════════════════════════════
 def test_story_expansion(config: dict, prompt: str, panel_count: int | None) -> list[str]:
@@ -143,7 +113,7 @@ def test_story_expansion(config: dict, prompt: str, panel_count: int | None) -> 
 # ═══════════════════════════════════════════════════════════════════
 #  STEP 2 · Prompt Engineering
 # ═══════════════════════════════════════════════════════════════════
-def test_prompt_engineering(config: dict, panels: list[str], character_tags: str):
+def test_prompt_engineering(config: dict, panels: list[str]):
     divider("STEP 2 · Prompt Engineering (SD Engineer)")
 
     llm_cfg = config.get("llm", {})
@@ -175,7 +145,6 @@ def test_prompt_engineering(config: dict, panels: list[str], character_tags: str
         trigger_words=trigger_words,
     )
 
-    print(f"  🏷️  Character tags: {character_tags}")
     print(f"  🤖 Model:          {llm_cfg.get('model_name', 'qwen3-coder-next:cloud')}")
     print(f"  🔗 LoRA tags:      {lora_tags or '(none — no .safetensors found)'}")
     print(f"  📎 Trigger words:  {trigger_words or '(none)'}")
@@ -184,7 +153,6 @@ def test_prompt_engineering(config: dict, panels: list[str], character_tags: str
     t0 = time.time()
     panel_prompts = engineer.generate(
         panels=panels,
-        character_features=character_tags,
     )
     elapsed = time.time() - t0
 
@@ -321,26 +289,16 @@ def main():
     print(f"  Config:    {args.config}")
     print(f"  Prompt:    {prompt}")
     print(f"  Panels:    {args.panels or 'auto'}")
-    print(f"  Reference: {ref_image}")
-    print(f"  Vision:    {'skip' if args.skip_vision else 'enabled'}")
     print(f"  TTS test:  {'yes' if args.test_tts else 'no'}")
     print("=" * 50)
 
     total_t0 = time.time()
 
-    # ── Step 0: Character tags ───────────────────────────────────
-    if args.skip_vision:
-        character_tags = "1boy, spiky silver hair, sharp blue eyes, long black trench coat, silver buttons, red scarf, dark combat boots"
-        divider("STEP 0 · Character Tags (manual — vision skipped)")
-        print(f"  {character_tags}")
-    else:
-        character_tags = test_character_extraction(config, ref_image)
-
     # ── Step 1: Story expansion ──────────────────────────────────
     panels = test_story_expansion(config, prompt, args.panels)
 
     # ── Step 2: Prompt engineering ───────────────────────────────
-    test_prompt_engineering(config, panels, character_tags)
+    test_prompt_engineering(config, panels)
 
     # ── Step 2.5: TTS script extraction (optional) ──────────────
     if args.test_tts:

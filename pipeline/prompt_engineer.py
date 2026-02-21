@@ -23,9 +23,11 @@ logger = logging.getLogger(__name__)
 class PanelPrompt:
     panel_number: int
     camera_angle: str
+    panel_design: str                    # LLM's spatial/layout reasoning
     sd_prompt: str                       # raw tags from LLM
     final_prompt: str = ""               # after LoRA / quality injection
     negative_prompt: str = ""
+    layouts: List[Dict[str, Any]] = field(default_factory=list) # Bounding boxes for IP-Adapter masking
 
 
 # ── System prompt — the "SD Engineer" ────────────────────────────────
@@ -42,9 +44,11 @@ protagonist appears.
 ## Constraints
 1. **Strict Brevity (77-Token Limit)**: SDXL's CLIP encoder only processes the first 77 tokens. You MUST extract ONLY the most essential visual keywords. Maximum 30 tags per prompt. Remove all filler words (e.g., "a", "the", "in", "with").
 2. **Prioritized Weighting**: Apply higher weight to the most critical subjects and actions using SD syntax, e.g., `(1boy:1.2)`, `(swinging sword:1.3)`. Keep backgrounds and secondary elements unweighted to save space.
-3. **Tag Format**: Use comma-separated phrases. Order MUST be: [Weighted Subject], [Weighted Action], [Environment], [Lighting/Effect].
-4. **Character Consistency**: Describe the protagonist using brief, consistent physical tags (e.g., `black hair`, `red jacket`).
-5. **Output**: Strictly valid JSON — no markdown fences, no commentary.
+3. **Explicit Layout & Bounding Boxes**: Declare character positions using a `layout` array. For each character, provide a `label` (MUST use "protagonist" for the main character), a `box` with normalized bounding box coordinates `[x_min, y_min, x_max, y_max]` from 0.0 to 1.0 (e.g., `[0.1, 0.2, 0.4, 0.9]`), and a brief `prompt` for that specific character.
+4. **NO Comic Formatting**: Do NOT include words like "comic", "manga", "speech bubble", "panel", "text", or "borders" in your `sd_prompt`, as this causes Structural image corruption.
+5. **Tag Format**: Use comma-separated phrases. Order MUST be: [Weighted Subject], [Weighted Action], [Environment], [Lighting/Effect].
+6. **Protagonist Appearance**: Do NOT describe the protagonist's physical appearance (e.g. hair color, clothing style, eye color, etc.). Their appearance is completely controlled by a reference image adapter. Just use generic tags like `1boy` or `1girl`, `protagonist`, and describe their action/emotion. You CAN describe the appearance of other secondary characters.
+7. **Output**: Strictly valid JSON — no markdown fences, no commentary.
 
 ## Output JSON Format
 {{
@@ -52,6 +56,11 @@ protagonist appears.
     {{
       "panel_number": 1,
       "camera_angle": "Wide Shot / Close-up / etc.",
+      "panel_design": "Explain the exact scene layout, number of characters, and character positioning.",
+      "layout": [
+        {{"label": "protagonist", "box": [0.1, 0.2, 0.4, 0.9], "prompt": "1man, protagonist, lunging forward"}},
+        {{"label": "villain", "box": [0.6, 0.2, 0.9, 0.9], "prompt": "1man, wizard, black robe"}}
+      ],
       "sd_prompt": "tags, go, here, masterpiece, high quality"
     }}
   ]
@@ -67,7 +76,12 @@ robot's metallic armor.
     {{
       "panel_number": 3,
       "camera_angle": "Action Shot",
-      "sd_prompt": "(1man:1.2), (samurai:1.2), silver hair, black hakama, (lunging forward:1.3), swinging katana, sparks flying, fighting giant robot, heavy rain, neon rim light"
+      "panel_design": "2 characters. The protagonist is on the left lunging forward, the giant robot is on the right. Heavy rain environment.",
+      "layout": [
+        {{"label": "protagonist", "box": [0.05, 0.2, 0.45, 0.9], "prompt": "1man, protagonist, fighting stance"}},
+        {{"label": "robot", "box": [0.55, 0.1, 0.95, 0.9], "prompt": "giant robot, metallic armor, blocking"}}
+      ],
+      "sd_prompt": "(1man:1.2), protagonist, (lunging forward:1.3), swinging katana, sparks flying, fighting giant robot, heavy rain, neon rim light"
     }}
   ]
 }}
@@ -128,11 +142,16 @@ class PromptEngineer:
         logger.info("Converting panel narratives to SD prompts …")
         result = self.llm.invoke(messages)
         raw = result.content.strip()
-        logger.info(f"Raw SD prompt JSON:\n{raw}")
+        logger.debug(f"Raw SD prompt JSON:\n{raw}")
 
         # Parse JSON from LLM output
         parsed = self._parse_json(raw)
         panel_prompts = self._build_panel_prompts(parsed, len(panels))
+        
+        # Log textual reasoning cleanly
+        for p in panel_prompts:
+            logger.info(f"Panel {p.panel_number} Design: {p.panel_design}")
+            
         return panel_prompts
 
     # ── JSON parsing ─────────────────────────────────────────────────
@@ -189,9 +208,11 @@ class PromptEngineer:
             prompts.append(PanelPrompt(
                 panel_number=item.get("panel_number", len(prompts) + 1),
                 camera_angle=item.get("camera_angle", "Medium Shot"),
+                panel_design=item.get("panel_design", "No design provided."),
                 sd_prompt=sd_prompt,
                 final_prompt=final_prompt,
                 negative_prompt=self.negative_prompt,
+                layouts=item.get("layout", []),
             ))
 
         if len(prompts) != expected_count:

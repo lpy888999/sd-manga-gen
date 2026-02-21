@@ -118,6 +118,13 @@ def setup_logging(verbose: bool = False):
     for lib in ("httpx", "httpcore", "urllib3", "diffusers", "transformers"):
         logging.getLogger(lib).setLevel(logging.WARNING)
 
+    # Disable diffusers progress bars to keep logs clean
+    try:
+        from diffusers.utils.logging import disable_progress_bar
+        disable_progress_bar()
+    except ImportError:
+        pass
+
 
 def main():
     args = parse_args()
