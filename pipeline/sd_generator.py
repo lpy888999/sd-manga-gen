@@ -216,16 +216,16 @@ class SDGenerator:
             ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
             sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
             w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
-            scale = self.ip_adapter.get("scale", 0.7)
 
-            logger.info(f"Loading IP-Adapter: {ip_id} ({w_name}), scale={scale}")
+            logger.info(f"Loading IP-Adapter weights...")
             self._pipe.load_ip_adapter(
                 ip_id,
                 subfolder=sub_f,
                 weight_name=w_name,
             )
-            self._pipe.set_ip_adapter_scale(scale)
-            logger.info("IP-Adapter loaded successfully.")
+            # Disable by default to prevent unwanted injection
+            self._pipe.set_ip_adapter_scale(0.0)
+            logger.info("IP-Adapter loaded successfully (scale initialized to 0.0)")
 
         # Initialize Img2Img pipeline sharing the exact same components
         # This takes almost zero extra VRAM but enables 2-stage generation
@@ -281,6 +281,13 @@ class SDGenerator:
 
         w = width or self.default_width
         h = height or self.default_height
+        
+        # 1. Auto-upscale for SDXL
+        if "xl" in self.model_path.lower() and (w < 1024 and h < 1024):
+            logger.warning(f"Resolution {w}x{h} is too low for SDXL. Upscaling to ~1024 primary edge.")
+            ratio = 1024 / max(w, h)
+            w, h = int(w * ratio), int(h * ratio)
+
         s = seed if seed is not None else self.seed
 
         generator = None
@@ -292,118 +299,74 @@ class SDGenerator:
         logger.info(f"Generating image ({w}×{h}) …")
         logger.debug(f"  Prompt: {prompt[:200]}")
 
-        # Stage 1 CFG should be lower to avoid structural stiffness
-        t2i_cfg = max(self.guidance_scale - 1.5, 5.0)  
+        # ── Phase 1: Text2Img (Pure Scene/Layout) ──
+        logger.info("Stage 1: Text2Img generation (Pure Layout)")
+        
+        # Ensure adapter is silenced during structural base generation
+        if hasattr(self._pipe, "set_ip_adapter_scale"):
+            self._pipe.set_ip_adapter_scale(0.0)
 
-        kwargs = {
+        t2i_kwargs = {
             "prompt": prompt,
             "negative_prompt": negative_prompt or None,
             "width": w,
             "height": h,
-            "guidance_scale": t2i_cfg,
+            "guidance_scale": max(self.guidance_scale - 1.5, 5.0),
             "num_inference_steps": self.num_inference_steps,
             "generator": generator,
         }
+        
+        # NOTE: Explicitly NOT passing `ip_adapter_image` here to ensure unet executes pure T2I path
+        base_image = self._pipe(**t2i_kwargs).images[0]
 
-        has_ip = ip_adapter_image is not None and getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None
-
-        if has_ip and layouts is not None and len(layouts) > 0:
-            protagonist_box = None
+        # Process layout coordinates to detect protagonist
+        protagonist_box = None
+        if layouts is not None and len(layouts) > 0:
             for lay in layouts:
                 lbl = str(lay.get("label", "")).lower()
                 if "protagonist" in lbl or "hero" in lbl or "main" in lbl:
                     protagonist_box = lay.get("box")
                     break
-            
-            # If exactly 1 character is detected and not explicitly labeled protagonist, assume it's them.
             if protagonist_box is None and len(layouts) == 1:
                 protagonist_box = layouts[0].get("box")
 
-            if protagonist_box and len(protagonist_box) == 4:
-                # ── Phase 1: Text2Img (Pure Scene/Layout) ──
-                # CRITICAL: We do NOT pass `ip_adapter_image` or set scale to 0.0 here.
-                # Diffusers UNet raises ValueError if `encoder_hid_dim_type`='ip_image_proj'
-                # but no `image_embeds` is provided. We must completely unload it for Stage 1.
-                logger.info("Stage 1: Text2Img generation (Pure Scene/Layout)")
-                
-                if hasattr(self._pipe, "unload_ip_adapter"):
-                    try:
-                        self._pipe.unload_ip_adapter()
-                    except Exception as e:
-                        logger.warning(f"Failed to unload IP-adapter: {e}")
-                        
-                t2i_kwargs = kwargs.copy()
-                base_image = self._pipe(**t2i_kwargs).images[0]
-                
-                # ── Phase 2: Img2Img (Injecting IP-Adapter Appearance) ──
-                logger.info("Stage 2: Img2Img generation (Injecting IP-Adapter Appearance)")
-                
-                # Reload IP adapter for the Img2Img pipeline (it shares the UNet, so we load it on base pipe)
-                if self.ip_adapter and self.ip_adapter.get("enable", False):
-                    ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
-                    sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
-                    w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
-                    self._pipe.load_ip_adapter(ip_id, subfolder=sub_f, weight_name=w_name)
-                
-                # Use a balanced scale/strength combo to prevent localized texture overwrites
-                scale = self.ip_adapter.get("scale", 0.4) if hasattr(self, "ip_adapter") and self.ip_adapter else 0.4
-                img2img_strength = 0.3
-                
-                self._pipe_i2i.set_ip_adapter_scale(scale)
-                
-                i2i_kwargs = kwargs.copy()
-                del i2i_kwargs["width"]
-                del i2i_kwargs["height"]
-                # CRITICAL: Do not pass the generator here to allow fresh noise resampling
-                if "generator" in i2i_kwargs:
-                    del i2i_kwargs["generator"]
-                    
-                i2i_kwargs["guidance_scale"] = max(self.guidance_scale - 2.5, 4.0) # Lower CFG for img2img phase
-                i2i_kwargs["image"] = base_image
-                i2i_kwargs["strength"] = img2img_strength 
-                i2i_kwargs["ip_adapter_image"] = ip_adapter_image
-                
-                mask = Image.new("L", (w, h), 0)
-                x_min, y_min = int(protagonist_box[0] * w), int(protagonist_box[1] * h)
-                x_max, y_max = int(protagonist_box[2] * w), int(protagonist_box[3] * h)
-                draw = ImageDraw.Draw(mask)
-                draw.rectangle([x_min, y_min, x_max, y_max], fill=255)
-                
-                logger.info(f"Applying IP-Adapter mask for protagonist box: {protagonist_box}")
-                mask_processor = IPAdapterMaskProcessor()
-                mask_tensor = mask_processor.preprocess([mask])
-                i2i_kwargs["cross_attention_kwargs"] = {"ip_adapter_masks": mask_tensor}
-                
-                image = self._pipe_i2i(**i2i_kwargs).images[0]
-                logger.info("Panel generated successfully (2-Stage Pipeline).")
-                return image
-            else:
-                logger.info("Protagonist not found in layout. Disabling IP-Adapter for this panel.")
-                
-        # ── Fallback (No IP-Adapter) ──
-        logger.info("Generating standard Text2Img panel")
-        
-        # Ensure ip_adapter is unloaded from UNet for pure text2img if it was previously loaded
-        if hasattr(self._pipe, "unload_ip_adapter"):
-            try:
-                self._pipe.unload_ip_adapter()
-                logger.debug("Unloaded IP-adapter for standard Text2Img pass.")
-            except Exception as e:
-                logger.warning(f"Failed to unload IP-adapter: {e}")
+        # ── Phase 2: Img2Img (Injecting IP-Adapter Appearance) ──
+        has_ip = getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None
+        if has_ip and ip_adapter_image and protagonist_box and len(protagonist_box) == 4:
+            logger.info("Stage 2: Masked IP-Adapter Refinement")
+            
+            scale = self.ip_adapter.get("scale", 0.4) if hasattr(self, "ip_adapter") and self.ip_adapter else 0.4
+            self._pipe_i2i.set_ip_adapter_scale(scale)
+            
+            # Prepare Mask
+            mask = Image.new("L", (w, h), 0)
+            x_min = int(protagonist_box[0] * w)
+            y_min = int(protagonist_box[1] * h)
+            x_max = int(protagonist_box[2] * w)
+            y_max = int(protagonist_box[3] * h)
+            ImageDraw.Draw(mask).rectangle([x_min, y_min, x_max, y_max], fill=255)
+            
+            # Note: Best to instantiate `IPAdapterMaskProcessor` once in init, but local instancing overhead is dwarfed by inference
+            mask_tensor = IPAdapterMaskProcessor().preprocess([mask])
 
-        t2i_kwargs = kwargs.copy()
-        result = self._pipe(**t2i_kwargs)
-        image = result.images[0]
-        
-        # Reload it for subsequent calls if enabled
-        if self.ip_adapter and self.ip_adapter.get("enable", False):
-            ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
-            sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
-            w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
-            self._pipe.load_ip_adapter(ip_id, subfolder=sub_f, weight_name=w_name)
-
-        logger.info("Panel generated successfully.")
-        return image
+            i2i_kwargs = {
+                "prompt": prompt,
+                "negative_prompt": negative_prompt or None,
+                "image": base_image,
+                "strength": 0.3,  # Gentle denoise to preserve semantic layout structure
+                "ip_adapter_image": ip_adapter_image, # Passed safely here during Phase 2
+                "cross_attention_kwargs": {"ip_adapter_masks": mask_tensor},
+                "guidance_scale": max(self.guidance_scale - 2.5, 4.0),
+                "num_inference_steps": self.num_inference_steps,
+                "generator": generator, # Reusing the seed to share sequence noise
+            }
+            
+            final_image = self._pipe_i2i(**i2i_kwargs).images[0]
+            logger.info("Panel generated successfully (2-Stage Pipeline).")
+            return final_image
+            
+        logger.info("Panel generated successfully (1-Stage Pipeline).")
+        return base_image
 
     def generate_panels(
         self,
