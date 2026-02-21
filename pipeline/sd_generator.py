@@ -211,46 +211,40 @@ class SDGenerator:
             self._pipe.set_adapters(adapter_names, adapter_weights=adapter_weights)
             logger.info(f"Active LoRA adapters: {list(zip(adapter_names, adapter_weights))}")
 
-        # ── Initialize Dual UNet Architecture ────────────────────────
-        # We need a Pure UNet for Stage 1 (Text2Img) and a Patched UNet 
-        # for Stage 2 (IP-Adapter). Deepcopying the UNet lets them 
-        # share weight buffers (via torch's underlying storage) but 
-        # have independent attention processors and configs.
-        
-        # Instantiate I2I pipe sharing base components
-        is_xl = "xl" in self.model_path.lower() or "sdxl" in self.model_path.lower()
-        I2IPipeClass = StableDiffusionXLImg2ImgPipeline if is_xl else StableDiffusionImg2ImgPipeline
-        self._pipe_i2i = I2IPipeClass(**self._pipe.components)
-
+        # ── Load IP-Adapter ──────────────────────────────────────────
         if self.ip_adapter and self.ip_adapter.get("enable", False):
-            import copy
-            logger.info("Cloning UNet for IP-Adapter refined Stage 2...")
-            # We clone the unet for the I2I pipe so its IP-adapter patches 
-            # don't contaminate the Stage 1 pipe's pure structural generation.
-            self._pipe_i2i.unet = copy.deepcopy(self._pipe.unet)
-
             ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
             sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
             w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
             
-            logger.info(f"Loading IP-Adapter into Stage 2 UNet...")
-            self._pipe_i2i.load_ip_adapter(ip_id, subfolder=sub_f, weight_name=w_name)
-            
-            # Sync scheduler for I2I pipe
-            self._pipe_i2i.scheduler = DPMSolverMultistepScheduler.from_config(
-                self._pipe.scheduler.config,
-                use_karras_sigmas=True,
+            logger.info(f"Loading IP-Adapter weights...")
+            self._pipe.load_ip_adapter(
+                ip_id, 
+                subfolder=sub_f, 
+                weight_name=w_name
             )
+            # Disable by default to prevent unwanted injection
+            self._pipe.set_ip_adapter_scale(0.0)
+            logger.info("IP-Adapter loaded successfully (scale initialized to 0.0)")
+
+        # Initialize Img2Img pipeline sharing the exact same components
+        is_xl = "xl" in self.model_path.lower() or "sdxl" in self.model_path.lower()
+        I2IPipeClass = StableDiffusionXLImg2ImgPipeline if is_xl else StableDiffusionImg2ImgPipeline
+        self._pipe_i2i = I2IPipeClass(**self._pipe.components)
+        
+        # Sync scheduler for I2I pipe
+        self._pipe_i2i.scheduler = DPMSolverMultistepScheduler.from_config(
+            self._pipe.scheduler.config,
+            use_karras_sigmas=True,
+        )
 
         # Optimization for VRAM
         if device == "cuda":
             self._pipe.enable_model_cpu_offload()
-            self._pipe_i2i.enable_model_cpu_offload()
             torch.cuda.empty_cache()
-            logger.info("Pipeline VRAM optimization enabled: model_cpu_offload (Dual-UNet)")
+            logger.info("Pipeline VRAM optimization enabled: model_cpu_offload")
         else:
             self._pipe.to(device)
-            self._pipe_i2i.to(device)
 
         logger.info(f"Pipeline ready on {device} ({dtype})")
 
@@ -306,8 +300,13 @@ class SDGenerator:
         logger.info(f"Generating image ({w}×{h}) …")
 
         # ── Phase 1: Text2Img (Pure Scene/Layout) ──
-        # Since _pipe.unet is NOT patched with IP-Adapter, this is 100% pure Text2Img.
         logger.info("Stage 1: Text2Img generation (Pure Layout)")
+        
+        # Determine if IP-Adapter is active on the UNet
+        has_ip = getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None
+
+        if has_ip:
+            self._pipe.set_ip_adapter_scale(0.0)
 
         t2i_kwargs = {
             "prompt": prompt,
@@ -319,6 +318,12 @@ class SDGenerator:
             "generator": generator,
         }
         
+        # CRITICAL FIX for Diffusers ValueError: 
+        # If the UNet has encoder_hid_proj patched for IP-Adapter, it demands `image_embeds` in `added_conditions`.
+        # Therefore, we MUST pass `ip_adapter_image` even if the scale is 0.0.
+        if has_ip and ip_adapter_image is not None:
+            t2i_kwargs["ip_adapter_image"] = ip_adapter_image
+            
         base_image = self._pipe(**t2i_kwargs).images[0]
 
         # Process layout coordinates to detect protagonist
@@ -333,7 +338,6 @@ class SDGenerator:
                 protagonist_box = layouts[0].get("box")
 
         # ── Phase 2: Img2Img (Injecting IP-Adapter Appearance) ──
-        has_ip = getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None
         if has_ip and ip_adapter_image and protagonist_box and len(protagonist_box) == 4:
             logger.info("Stage 2: Masked IP-Adapter Refinement")
             
