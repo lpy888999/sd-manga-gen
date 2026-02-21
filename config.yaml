@@ -31,7 +31,7 @@ sd:
 
   # IP-Adapter — keeps character consistent based on reference image
   ip_adapter:
-    enable: true
+    enable: false
     model_id: "h94/IP-Adapter"
     subfolder: "sdxl_models"
     weight_name: "ip-adapter_sdxl.bin"
@@ -59,8 +59,8 @@ layout:
 
 # --- Prompt Engineering ---
 prompt:
-  # Global quality tags appended to every SD prompt
-  quality_suffix: "masterpiece, best quality, high resolution, comic style, thick lineart"
+  # Concise quality tags to save CLIP token space (SDXL has a 77 token limit)
+  quality_suffix: "masterpiece, comic_style"
   # Negative prompt shared across all panels
   negative_prompt: "low quality, blurry, distorted face, extra fingers, bad anatomy, watermark, text, signature"
 

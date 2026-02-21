@@ -35,14 +35,16 @@ You are an expert Prompt Engineer for Stable Diffusion. You specialize in \
 converting natural language scenes into high-quality, tag-based prompts.
 
 ## Task
-Convert the provided narrative panels into technical SD prompts. A reference image is provided via IP-Adapter to keep the **Protagonist** consistent.
+Convert the provided narrative panels into technical SD prompts. You must \
+incorporate consistent character visual traits into every panel where the \
+protagonist appears.
 
 ## Constraints
-1. **Tag Format**: Use comma-separated tags.  \
-   Order: [Subject], [Action], [Environment], [Shot Type], [Lighting/Effect].
-2. **Character Consistency**: Describe the protagonist using simple, consistent terms (e.g., "1boy" or "1girl") and refer to their key actions. The IP-Adapter will handle their specific identity.
-3. **Consistency**: Use "masterpiece, high quality, comic style" as global suffixes.
-4. **Output**: Strictly valid JSON — no markdown fences, no commentary.
+1. **Strict Brevity (77-Token Limit)**: SDXL's CLIP encoder only processes the first 77 tokens. You MUST extract ONLY the most essential visual keywords. Maximum 30 tags per prompt. Remove all filler words (e.g., "a", "the", "in", "with").
+2. **Prioritized Weighting**: Apply higher weight to the most critical subjects and actions using SD syntax, e.g., `(1boy:1.2)`, `(swinging sword:1.3)`. Keep backgrounds and secondary elements unweighted to save space.
+3. **Tag Format**: Use comma-separated phrases. Order MUST be: [Weighted Subject], [Weighted Action], [Environment], [Lighting/Effect].
+4. **Character Consistency**: Describe the protagonist using brief, consistent physical tags (e.g., `black hair`, `red jacket`).
+5. **Output**: Strictly valid JSON — no markdown fences, no commentary.
 
 ## Output JSON Format
 {{
@@ -65,10 +67,7 @@ robot's metallic armor.
     {{
       "panel_number": 3,
       "camera_angle": "Action Shot",
-      "sd_prompt": "1man, samurai, silver hair, black hakama, lunging forward, \
-swinging katana, sword trail, sparks flying, fighting giant robot, heavy rain, \
-splash, neon rim lighting, motion blur, cinematic composition, masterpiece, \
-high quality, comic style"
+      "sd_prompt": "(1man:1.2), (samurai:1.2), silver hair, black hakama, (lunging forward:1.3), swinging katana, sparks flying, fighting giant robot, heavy rain, neon rim light"
     }}
   ]
 }}
@@ -82,8 +81,8 @@ class PromptEngineer:
         self,
         model_name: str = "qwen3-coder-next:cloud",
         temperature: float = 0.4,
-        quality_suffix: str = "masterpiece, best quality, high resolution, comic style, thick lineart",
-        negative_prompt: str = "low quality, blurry, distorted face, extra fingers, bad anatomy, watermark, text, signature",
+        quality_suffix: str = "masterpiece, comic_style",
+        negative_prompt: str = "low quality, blurry, distorted, extra fingers",
         lora_tags: Optional[List[str]] = None,
         trigger_words: Optional[List[str]] = None,
     ):
