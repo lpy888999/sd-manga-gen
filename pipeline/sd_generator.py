@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Dict, Any
 
 from PIL import Image, ImageDraw
+from diffusers.image_processor import IPAdapterMaskProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -312,11 +313,15 @@ class SDGenerator:
                     draw = ImageDraw.Draw(mask)
                     draw.rectangle([x_min, y_min, x_max, y_max], fill=255)
                     logger.info(f"Applying IP-Adapter mask for protagonist box: {protagonist_box}")
-                    cross_attention_kwargs["ip_adapter_masks"] = [mask]
+                    mask_processor = IPAdapterMaskProcessor()
+                    mask_tensor = mask_processor.preprocess([mask])
+                    cross_attention_kwargs["ip_adapter_masks"] = mask_tensor
                 else:
                     logger.info("Protagonist not found in multi-character layout. Disabling IP-Adapter for this panel to prevent feature bleeding.")
                     mask = Image.new("L", (w, h), 0)
-                    cross_attention_kwargs["ip_adapter_masks"] = [mask]
+                    mask_processor = IPAdapterMaskProcessor()
+                    mask_tensor = mask_processor.preprocess([mask])
+                    cross_attention_kwargs["ip_adapter_masks"] = mask_tensor
 
         if cross_attention_kwargs:
             kwargs["cross_attention_kwargs"] = cross_attention_kwargs
