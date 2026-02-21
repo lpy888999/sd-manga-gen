@@ -211,41 +211,46 @@ class SDGenerator:
             self._pipe.set_adapters(adapter_names, adapter_weights=adapter_weights)
             logger.info(f"Active LoRA adapters: {list(zip(adapter_names, adapter_weights))}")
 
-        # ── Load IP-Adapter ──────────────────────────────────────────
-        if self.ip_adapter and self.ip_adapter.get("enable", False):
-            ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
-            sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
-            w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
-
-            logger.info(f"Loading IP-Adapter weights...")
-            self._pipe.load_ip_adapter(
-                ip_id,
-                subfolder=sub_f,
-                weight_name=w_name,
-            )
-            # Disable by default to prevent unwanted injection
-            self._pipe.set_ip_adapter_scale(0.0)
-            logger.info("IP-Adapter loaded successfully (scale initialized to 0.0)")
-
-        # Initialize Img2Img pipeline sharing the exact same components
-        # This takes almost zero extra VRAM but enables 2-stage generation
+        # ── Initialize Dual UNet Architecture ────────────────────────
+        # We need a Pure UNet for Stage 1 (Text2Img) and a Patched UNet 
+        # for Stage 2 (IP-Adapter). Deepcopying the UNet lets them 
+        # share weight buffers (via torch's underlying storage) but 
+        # have independent attention processors and configs.
+        
+        # Instantiate I2I pipe sharing base components
         is_xl = "xl" in self.model_path.lower() or "sdxl" in self.model_path.lower()
         I2IPipeClass = StableDiffusionXLImg2ImgPipeline if is_xl else StableDiffusionImg2ImgPipeline
         self._pipe_i2i = I2IPipeClass(**self._pipe.components)
-        
-        # Ensure Img2Img pipeline uses the exact same Karras scheduler
-        self._pipe_i2i.scheduler = DPMSolverMultistepScheduler.from_config(
-            self._pipe.scheduler.config,
-            use_karras_sigmas=True,
-        )
 
-        # Optimization for VRAM: Move components to CPU when not in use
+        if self.ip_adapter and self.ip_adapter.get("enable", False):
+            import copy
+            logger.info("Cloning UNet for IP-Adapter refined Stage 2...")
+            # We clone the unet for the I2I pipe so its IP-adapter patches 
+            # don't contaminate the Stage 1 pipe's pure structural generation.
+            self._pipe_i2i.unet = copy.deepcopy(self._pipe.unet)
+
+            ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
+            sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
+            w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
+            
+            logger.info(f"Loading IP-Adapter into Stage 2 UNet...")
+            self._pipe_i2i.load_ip_adapter(ip_id, subfolder=sub_f, weight_name=w_name)
+            
+            # Sync scheduler for I2I pipe
+            self._pipe_i2i.scheduler = DPMSolverMultistepScheduler.from_config(
+                self._pipe.scheduler.config,
+                use_karras_sigmas=True,
+            )
+
+        # Optimization for VRAM
         if device == "cuda":
             self._pipe.enable_model_cpu_offload()
+            self._pipe_i2i.enable_model_cpu_offload()
             torch.cuda.empty_cache()
-            logger.info("Pipeline VRAM optimization enabled: model_cpu_offload")
+            logger.info("Pipeline VRAM optimization enabled: model_cpu_offload (Dual-UNet)")
         else:
             self._pipe.to(device)
+            self._pipe_i2i.to(device)
 
         logger.info(f"Pipeline ready on {device} ({dtype})")
 
@@ -282,7 +287,11 @@ class SDGenerator:
         w = width or self.default_width
         h = height or self.default_height
         
-        # 1. Auto-upscale for SDXL
+        # 1. Base Multiplier Fix (Must be multiple of 8)
+        w = round(w / 8) * 8
+        h = round(h / 8) * 8
+
+        # 2. Auto-upscale for SDXL
         if "xl" in self.model_path.lower() and (w < 1024 and h < 1024):
             logger.warning(f"Resolution {w}x{h} is too low for SDXL. Upscaling to ~1024 primary edge.")
             ratio = 1024 / max(w, h)
@@ -290,22 +299,15 @@ class SDGenerator:
             h = round((h * ratio) / 8) * 8
 
         s = seed if seed is not None else self.seed
-
         generator = None
         if s is not None:
-            device = self._pipe.device
-            generator = torch.Generator(device=device).manual_seed(s)
-            logger.info(f"Using seed {s}")
+            generator = torch.Generator(device=self._pipe.device).manual_seed(s)
 
         logger.info(f"Generating image ({w}×{h}) …")
-        logger.debug(f"  Prompt: {prompt[:200]}")
 
         # ── Phase 1: Text2Img (Pure Scene/Layout) ──
+        # Since _pipe.unet is NOT patched with IP-Adapter, this is 100% pure Text2Img.
         logger.info("Stage 1: Text2Img generation (Pure Layout)")
-        
-        # Ensure adapter is silenced during structural base generation
-        if hasattr(self._pipe, "set_ip_adapter_scale"):
-            self._pipe.set_ip_adapter_scale(0.0)
 
         t2i_kwargs = {
             "prompt": prompt,
@@ -317,7 +319,6 @@ class SDGenerator:
             "generator": generator,
         }
         
-        # NOTE: Explicitly NOT passing `ip_adapter_image` here to ensure unet executes pure T2I path
         base_image = self._pipe(**t2i_kwargs).images[0]
 
         # Process layout coordinates to detect protagonist
