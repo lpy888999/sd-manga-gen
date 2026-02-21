@@ -315,7 +315,12 @@ class SDGenerator:
                 logger.info("Stage 1: Text2Img generation (Pure Scene/Layout)")
                 self._pipe.set_ip_adapter_scale(0.0)
                 
-                base_image = self._pipe(**kwargs).images[0]
+                # The UNet structurally expects ip_adapter_image when the adapter is loaded,
+                # even if scale is 0.0.
+                t2i_kwargs = kwargs.copy()
+                t2i_kwargs["ip_adapter_image"] = ip_adapter_image
+                
+                base_image = self._pipe(**t2i_kwargs).images[0]
                 
                 # ── Phase 2: Img2Img (Injecting IP-Adapter Appearance) ──
                 logger.info("Stage 2: Img2Img generation (Injecting IP-Adapter Appearance)")
@@ -351,7 +356,11 @@ class SDGenerator:
         if hasattr(self._pipe, "set_ip_adapter_scale"):
             self._pipe.set_ip_adapter_scale(0.0)
             
-        result = self._pipe(**kwargs)
+        t2i_kwargs = kwargs.copy()
+        if ip_adapter_image is not None and getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None:
+            t2i_kwargs["ip_adapter_image"] = ip_adapter_image
+            
+        result = self._pipe(**t2i_kwargs)
         image = result.images[0]
         logger.info("Panel generated successfully.")
         return image
