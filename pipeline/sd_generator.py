@@ -34,6 +34,8 @@ try:
     from diffusers import (
         StableDiffusionXLPipeline,
         StableDiffusionPipeline,
+        StableDiffusionXLImg2ImgPipeline,
+        StableDiffusionImg2ImgPipeline,
         DPMSolverMultistepScheduler,
     )
     _DIFFUSERS_AVAILABLE = True
@@ -225,6 +227,12 @@ class SDGenerator:
             self._pipe.set_ip_adapter_scale(scale)
             logger.info("IP-Adapter loaded successfully.")
 
+        # Initialize Img2Img pipeline sharing the exact same components
+        # This takes almost zero extra VRAM but enables 2-stage generation
+        is_xl = "xl" in self.model_path.lower() or "sdxl" in self.model_path.lower()
+        I2IPipeClass = StableDiffusionXLImg2ImgPipeline if is_xl else StableDiffusionImg2ImgPipeline
+        self._pipe_i2i = I2IPipeClass(**self._pipe.components)
+
         # Optimization for VRAM: Move components to CPU when not in use
         if device == "cuda":
             self._pipe.enable_model_cpu_offload()
@@ -288,47 +296,62 @@ class SDGenerator:
             "generator": generator,
         }
 
-        cross_attention_kwargs = {}
-        if ip_adapter_image is not None and getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None:
-            # Only add if IP-Adapter is actually loaded (checked via encoder_hid_proj)
-            kwargs["ip_adapter_image"] = ip_adapter_image
+        has_ip = ip_adapter_image is not None and getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None
 
-            if layouts is not None and len(layouts) > 0:
-                protagonist_box = None
-                for lay in layouts:
-                    lbl = str(lay.get("label", "")).lower()
-                    if "protagonist" in lbl or "hero" in lbl or "main" in lbl:
-                        protagonist_box = lay.get("box")
-                        break
+        if has_ip and layouts is not None and len(layouts) > 0:
+            protagonist_box = None
+            for lay in layouts:
+                lbl = str(lay.get("label", "")).lower()
+                if "protagonist" in lbl or "hero" in lbl or "main" in lbl:
+                    protagonist_box = lay.get("box")
+                    break
+            
+            # If exactly 1 character is detected and not explicitly labeled protagonist, assume it's them.
+            if protagonist_box is None and len(layouts) == 1:
+                protagonist_box = layouts[0].get("box")
+
+            if protagonist_box and len(protagonist_box) == 4:
+                # ── Phase 1: Text2Img (Pure Scene/Layout) ──
+                logger.info("Stage 1: Text2Img generation (Pure Scene/Layout)")
+                self._pipe.set_ip_adapter_scale(0.0)
                 
-                # If exactly 1 character is detected and not explicitly labeled protagonist, assume it's them.
-                if protagonist_box is None and len(layouts) == 1:
-                    protagonist_box = layouts[0].get("box")
-
-                if protagonist_box and len(protagonist_box) == 4:
-                    mask = Image.new("L", (w, h), 0)
-                    x_min = int(protagonist_box[0] * w)
-                    y_min = int(protagonist_box[1] * h)
-                    x_max = int(protagonist_box[2] * w)
-                    y_max = int(protagonist_box[3] * h)
-                    draw = ImageDraw.Draw(mask)
-                    draw.rectangle([x_min, y_min, x_max, y_max], fill=255)
-                    logger.info(f"Applying IP-Adapter mask for protagonist box: {protagonist_box}")
-                    mask_processor = IPAdapterMaskProcessor()
-                    mask_tensor = mask_processor.preprocess([mask])
-                    cross_attention_kwargs["ip_adapter_masks"] = mask_tensor
-                else:
-                    logger.info("Protagonist not found in multi-character layout. Disabling IP-Adapter for this panel to prevent feature bleeding.")
-                    mask = Image.new("L", (w, h), 0)
-                    mask_processor = IPAdapterMaskProcessor()
-                    mask_tensor = mask_processor.preprocess([mask])
-                    cross_attention_kwargs["ip_adapter_masks"] = mask_tensor
-
-        if cross_attention_kwargs:
-            kwargs["cross_attention_kwargs"] = cross_attention_kwargs
-
+                base_image = self._pipe(**kwargs).images[0]
+                
+                # ── Phase 2: Img2Img (Injecting IP-Adapter Appearance) ──
+                logger.info("Stage 2: Img2Img generation (Injecting IP-Adapter Appearance)")
+                scale = self.ip_adapter.get("scale", 0.5) if hasattr(self, "ip_adapter") and self.ip_adapter else 0.5
+                self._pipe_i2i.set_ip_adapter_scale(scale)
+                
+                i2i_kwargs = kwargs.copy()
+                del i2i_kwargs["width"]
+                del i2i_kwargs["height"]
+                i2i_kwargs["image"] = base_image
+                i2i_kwargs["strength"] = 0.35  # Light denoise to preserve layout
+                i2i_kwargs["ip_adapter_image"] = ip_adapter_image
+                
+                mask = Image.new("L", (w, h), 0)
+                x_min, y_min = int(protagonist_box[0] * w), int(protagonist_box[1] * h)
+                x_max, y_max = int(protagonist_box[2] * w), int(protagonist_box[3] * h)
+                draw = ImageDraw.Draw(mask)
+                draw.rectangle([x_min, y_min, x_max, y_max], fill=255)
+                
+                logger.info(f"Applying IP-Adapter mask for protagonist box: {protagonist_box}")
+                mask_processor = IPAdapterMaskProcessor()
+                mask_tensor = mask_processor.preprocess([mask])
+                i2i_kwargs["cross_attention_kwargs"] = {"ip_adapter_masks": mask_tensor}
+                
+                image = self._pipe_i2i(**i2i_kwargs).images[0]
+                logger.info("Panel generated successfully (2-Stage Pipeline).")
+                return image
+            else:
+                logger.info("Protagonist not found in layout. Disabling IP-Adapter for this panel.")
+                
+        # ── Fallback (No IP-Adapter) ──
+        logger.info("Generating standard Text2Img panel")
+        if hasattr(self._pipe, "set_ip_adapter_scale"):
+            self._pipe.set_ip_adapter_scale(0.0)
+            
         result = self._pipe(**kwargs)
-
         image = result.images[0]
         logger.info("Panel generated successfully.")
         return image
