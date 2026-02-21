@@ -35,11 +35,11 @@ sd:
     model_id: "h94/IP-Adapter"
     subfolder: "sdxl_models"
     weight_name: "ip-adapter_sdxl.bin"
-    scale: 0.7
+    scale: 0.5
 
   # Generation parameters
-  guidance_scale: 7.5
-  num_inference_steps: 30
+  guidance_scale: 6.0
+  num_inference_steps: 35
   seed: null                        # null = random each run
 
 # --- Panel / Layout Settings ---
@@ -50,8 +50,8 @@ panels:
 layout:
   # Per-panel resolution (width × height) fed to SD
   panel_size:
-    width: 768
-    height: 512
+    width: 1024
+    height: 1024
   # Comic page assembly
   border_width: 6            # px, thick black panel borders
   gutter: 12                 # px, spacing between panels

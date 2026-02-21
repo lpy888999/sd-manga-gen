@@ -184,9 +184,10 @@ class SDGenerator:
             variant="fp16" if dtype == torch.float16 else None,
         )
 
-        # Use DPM++ 2M scheduler for speed
+        # Use DPM++ 2M Karras scheduler for better convergence
         self._pipe.scheduler = DPMSolverMultistepScheduler.from_config(
-            self._pipe.scheduler.config
+            self._pipe.scheduler.config,
+            use_karras_sigmas=True,
         )
 
         # ── Load LoRA adapters ───────────────────────────────────────
