@@ -51,7 +51,7 @@ layout:
   # Per-panel resolution (width × height) fed to SD
   panel_size:
     width: 1024
-    height: 1024
+    height: 768
   # Comic page assembly
   border_width: 6            # px, thick black panel borders
   gutter: 12                 # px, spacing between panels
