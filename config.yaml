@@ -10,7 +10,7 @@ llm:
 # --- Stable Diffusion Settings ---
 sd:
   # Base model — accepts a HuggingFace model ID or a local path
-  model_path: "Lykon/dreamshaper-xl"
+  model_path: "Lykon/dreamshaper-xl-1-0"
   # model_path: "/path/to/local/sdxl-model"
 
   # LoRA weights — just drop .safetensors files into these directories
