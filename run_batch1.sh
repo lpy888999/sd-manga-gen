@@ -166,7 +166,7 @@ run_story() {
         --audio \
         --audio-dir "${OUT_DIR}/audio" \
         -o "$OUT_IMG" \
-        -v >> "$LOG_FILE" 2>&1
+        -v >> "$LOG_FILE"
 
     if [ -f "$OUT_IMG" ]; then
         echo "  ✅ Story $IDX complete → $OUT_IMG"
