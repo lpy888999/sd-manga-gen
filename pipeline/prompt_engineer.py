@@ -46,7 +46,7 @@ protagonist appears.
 2. **Prioritized Weighting**: Apply higher weight to the most critical subjects and actions using SD syntax, e.g., `(1boy:1.2)`, `(swinging sword:1.3)`. Keep backgrounds and secondary elements unweighted to save space.
 3. **Explicit Layout & Bounding Boxes**: Declare character positions using a `layout` array. For each character, provide a `label` (MUST use "protagonist" for the main character), a `box` with normalized bounding box coordinates `[x_min, y_min, x_max, y_max]` from 0.0 to 1.0 (e.g., `[0.1, 0.2, 0.4, 0.9]`), and a brief `prompt` for that specific character.
 4. **NO Comic Formatting**: Do NOT include words like "comic", "manga", "speech bubble", "panel", "text", or "borders" in your `sd_prompt`, as this causes Structural image corruption.
-5. **Tag Format**: Use comma-separated phrases. Order MUST be: [Weighted Subject], [Weighted Action], [Environment], [Lighting/Effect].
+5. **Tag Format & Exact Character Count**: The VERY FIRST tags MUST define the exact number and gender of characters in the entire scene using Danbooru-style count tags (e.g., `1boy`, `1girl`, `2boys`, `1boy, 1girl`, `3girls`, `multiple girls`, `crowd`). Order MUST be: [Character Count Tags], [Weighted Subject], [Weighted Action], [Environment], [Lighting/Effect].
 6. **Character Appearance & Feature Decoupling**:
    {reference_instruction}
 7. **Output**: Strictly valid JSON — no markdown fences, no commentary.
