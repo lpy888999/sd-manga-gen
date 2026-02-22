@@ -216,16 +216,39 @@ class SDGenerator:
 
         # ── Load IP-Adapter ──────────────────────────────────────────
         if self.ip_adapter and self.ip_adapter.get("enable", False):
-            ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
-            sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
-            w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
-            
-            logger.info(f"Loading IP-Adapter weights...")
-            self._pipe.load_ip_adapter(
-                ip_id, 
-                subfolder=sub_f, 
-                weight_name=w_name
-            )
+            ip_type = self.ip_adapter.get("type", "base")
+            if ip_type == "faceid_plus_v2":
+                faceid_model = self.ip_adapter.get("faceid_model_id", "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin")
+                faceid_lora = self.ip_adapter.get("faceid_lora_name", "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl_lora.safetensors")
+                
+                logger.info(f"Loading IP-Adapter FaceID Plus V2 weights ({faceid_model})...")
+                
+                # FaceID Plus v2 requires special subfolder handling or direct path if downloaded locally. We expect local files.
+                model_dir = Path(faceid_model).parent
+                model_name = Path(faceid_model).name
+                
+                self._pipe.load_ip_adapter(
+                    str(model_dir), 
+                    subfolder="", 
+                    weight_name=model_name
+                )
+                
+                logger.info(f"Loading required FaceID LoRA: {faceid_lora}")
+                self._pipe.load_lora_weights(faceid_lora, adapter_name="faceid")
+                self._pipe.set_adapters(adapter_names + ["faceid"], adapter_weights=adapter_weights + [1.0])
+                
+            else:
+                ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
+                sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
+                w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
+                
+                logger.info(f"Loading standard IP-Adapter weights...")
+                self._pipe.load_ip_adapter(
+                    ip_id, 
+                    subfolder=sub_f, 
+                    weight_name=w_name
+                )
+                
             # Disable by default to prevent unwanted injection
             self._pipe.set_ip_adapter_scale(0.0)
             logger.info("IP-Adapter loaded successfully (scale initialized to 0.0)")
@@ -261,6 +284,7 @@ class SDGenerator:
         height: Optional[int] = None,
         seed: Optional[int] = None,
         ip_adapter_image: Optional[Image.Image] = None,
+        ip_adapter_face_embeds: Optional["torch.Tensor"] = None,
         layouts: Optional[List[Dict[str, Any]]] = None,
     ) -> Image.Image:
         """
@@ -309,8 +333,17 @@ class SDGenerator:
         # Determine if IP-Adapter is active on the UNet
         has_ip = getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None
 
+        # Determine IP-Adapter mode
+        ip_mode = self.ip_adapter.get("type", "base") if self.ip_adapter else "base"
+        scale = self.ip_adapter.get("scale", 0.5) if self.ip_adapter else 0.5
+        
         if has_ip:
-            self._pipe.set_ip_adapter_scale(0.0)
+            if ip_mode == "faceid_plus_v2" and ip_adapter_face_embeds is not None:
+                # FaceID applies directly in Text2Img phase at the full user-defined scale
+                self._pipe.set_ip_adapter_scale(scale)
+                logger.info(f"Applying FaceID Plus V2 at scale {scale}")
+            else:
+                self._pipe.set_ip_adapter_scale(0.0)
 
         t2i_kwargs = {
             "prompt": prompt,
@@ -328,8 +361,19 @@ class SDGenerator:
         if has_ip and ip_adapter_image is not None:
             t2i_kwargs["ip_adapter_image"] = ip_adapter_image
             
+            # Additional logic for FaceID Plus V2
+            if ip_mode == "faceid_plus_v2" and ip_adapter_face_embeds is not None:
+                t2i_kwargs["cross_attention_kwargs"] = {"ip_adapter_image_embeds": ip_adapter_face_embeds}
+            
         base_image = self._pipe(**t2i_kwargs).images[0]
 
+        # ── Phase 2: Img2Img (Injecting IP-Adapter Appearance) ──
+        # Skip Phase 2 entirely if we are using FaceID Plus V2 (FaceID already injected in Phase 1)
+        if ip_mode == "faceid_plus_v2":
+            logger.info("Panel generated successfully (FaceID Plus V2 injected inline).")
+            return base_image
+
+        # Standard IP-Adapter logic (Masked Two-Stage process)
         # Process layout coordinates to detect protagonist
         protagonist_box = None
         if layouts is not None and len(layouts) > 0:
@@ -341,11 +385,9 @@ class SDGenerator:
             if protagonist_box is None and len(layouts) == 1:
                 protagonist_box = layouts[0].get("box")
 
-        # ── Phase 2: Img2Img (Injecting IP-Adapter Appearance) ──
         if has_ip and ip_adapter_image and protagonist_box and len(protagonist_box) == 4:
             logger.info("Stage 2: Masked IP-Adapter Refinement")
             
-            scale = self.ip_adapter.get("scale", 0.4) if hasattr(self, "ip_adapter") and self.ip_adapter else 0.4
             self._pipe_i2i.set_ip_adapter_scale(scale)
             
             # Prepare Mask
@@ -383,6 +425,7 @@ class SDGenerator:
         panel_prompts: list,
         seed_offset: int = 0,
         ip_adapter_image: Optional[Image.Image] = None,
+        ip_adapter_face_embeds: Optional["torch.Tensor"] = None,
     ) -> List[Image.Image]:
         """
         Generate images for all panels.
@@ -410,6 +453,7 @@ class SDGenerator:
                 negative_prompt=pp.negative_prompt,
                 seed=panel_seed,
                 ip_adapter_image=ip_adapter_image,
+                ip_adapter_face_embeds=ip_adapter_face_embeds,
                 layouts=getattr(pp, "layouts", []),
             )
             images.append(img)

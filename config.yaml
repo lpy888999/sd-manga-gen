@@ -32,9 +32,19 @@ sd:
   # IP-Adapter — keeps character consistent based on reference image
   ip_adapter:
     enable: false
+    # "base" for standard IP-Adapter, "faceid_plus_v2" for IP-Adapter FaceID Plus V2
+    type: "faceid_plus_v2" 
+    
+    # Settings for type: "base"
     model_id: "h94/IP-Adapter"
     subfolder: "sdxl_models"
     weight_name: "ip-adapter_sdxl.bin"
+    
+    # Settings for type: "faceid_plus_v2"
+    faceid_model_id: "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin"
+    faceid_lora_name: "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl_lora.safetensors"
+    
+    # Global scale 
     scale: 0.5
 
   # Generation parameters
