@@ -243,6 +243,17 @@ class SDGenerator:
                 w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
                 
                 logger.info(f"Loading standard IP-Adapter weights...")
+                
+                if "vit-h" in w_name.lower():
+                    logger.info("Detected ViT-H IP-Adapter for SDXL. Explicitly loading ViT-H image encoder...")
+                    from transformers import CLIPVisionModelWithProjection
+                    image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+                        ip_id,
+                        subfolder="models/image_encoder",
+                        torch_dtype=dtype,
+                    ).to(device)
+                    self._pipe.image_encoder = image_encoder
+                
                 self._pipe.load_ip_adapter(
                     ip_id, 
                     subfolder=sub_f, 
