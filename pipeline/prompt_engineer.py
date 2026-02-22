@@ -52,40 +52,40 @@ protagonist appears.
 7. **Output**: Strictly valid JSON — no markdown fences, no commentary.
 
 ## Output JSON Format
-{
+{{
   "comic_output": [
-    {
+    {{
       "panel_number": 1,
       "camera_angle": "Wide Shot / Close-up / etc.",
       "panel_design": "Explain the exact scene layout, number of characters, and character positioning.",
       "layout": [
-        {"label": "protagonist", "box": [0.1, 0.2, 0.4, 0.9], "prompt": "1man, protagonist, lunging forward"},
-        {"label": "villain", "box": [0.6, 0.2, 0.9, 0.9], "prompt": "1man, wizard, black robe"}
+        {{"label": "protagonist", "box": [0.1, 0.2, 0.4, 0.9], "prompt": "1man, protagonist, lunging forward"}},
+        {{"label": "villain", "box": [0.6, 0.2, 0.9, 0.9], "prompt": "1man, wizard, black robe"}}
       ],
       "sd_prompt": "tags, go, here, masterpiece, high quality"
-    }
+    }}
   ]
-}
+}}
 
 ## Few-Shot Example
 **Input (Panel Description)**: The samurai lunges forward, a flash of steel \
 cutting through the raindrops. Sparks fly as the blade clangs against the \
 robot's metallic armor.
 **Output**:
-{
+{{
   "comic_output": [
-    {
+    {{
       "panel_number": 3,
       "camera_angle": "Action Shot",
       "panel_design": "2 characters. The protagonist is on the left lunging forward, the giant robot is on the right. Heavy rain environment.",
       "layout": [
-        {"label": "protagonist", "box": [0.05, 0.2, 0.45, 0.9], "prompt": "1man, protagonist, fighting stance"},
-        {"label": "robot", "box": [0.55, 0.1, 0.95, 0.9], "prompt": "giant robot, metallic armor, blocking"}
+        {{"label": "protagonist", "box": [0.05, 0.2, 0.45, 0.9], "prompt": "1man, protagonist, fighting stance"}},
+        {{"label": "robot", "box": [0.55, 0.1, 0.95, 0.9], "prompt": "giant robot, metallic armor, blocking"}}
       ],
-      "sd_prompt": "(1man:1.2), protagonist, (lunging forward:1.3), swinging katana, sparks flying, fighting giant robot, heavy rain, neon rim light"
-    }
+      "sd_prompt": "(1man:1.2), protagonist, (lunging forward:1.3), swinging katana, sparks flying, fighting giant robot, heavy rain, neon trim light"
+    }}
   ]
-}
+}}
 """
 
 # Instruction for Feature Decoupling when using IP-Adapter reference images
