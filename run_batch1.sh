@@ -159,7 +159,7 @@ run_story() {
 
     python main.py \
         --config "$CONFIG_FILE" \
-        --reference "tests/fixtures/reference_character.jpg" \
+        --reference "tests/fixtures/reference_character.png" \
         -p "$PROMPT" \
         --panels "$PANELS" \
         --seed "$SEED" \
@@ -172,6 +172,8 @@ run_story() {
         echo "  ✅ Story $IDX complete → $OUT_IMG"
     else
         echo "  ❌ Story $IDX FAILED — check $LOG_FILE"
+        echo "  Last 20 lines of $LOG_FILE:"
+        tail -n 20 "$LOG_FILE"
     fi
 }
 
@@ -205,7 +207,7 @@ run_story "2_ip_off" 4 "$MALE_PROMPT" "$SEED" "$CONFIG_IP_OFF"
 
 echo ""
 echo "═══════════════════════════════════════════════════"
-echo "  All 5 stories complete!"
+echo "  All stories complete!"
 echo "  Results:  $OUTPUT_BASE/"
 echo "  Slurm log: slurm-${SLURM_JOB_ID}.out"
 echo "═══════════════════════════════════════════════════"
