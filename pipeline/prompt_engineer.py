@@ -47,7 +47,7 @@ protagonist appears.
 3. **Explicit Layout & Bounding Boxes**: Declare character positions using a `layout` array. For each character, provide a `label` (MUST use "protagonist" for the main character), a `box` with normalized bounding box coordinates `[x_min, y_min, x_max, y_max]` from 0.0 to 1.0 (e.g., `[0.1, 0.2, 0.4, 0.9]`), and a brief `prompt` for that specific character.
 4. **NO Comic Formatting**: Do NOT include words like "comic", "manga", "speech bubble", "panel", "text", or "borders" in your `sd_prompt`, as this causes Structural image corruption.
 5. **Tag Format**: Use comma-separated phrases. Order MUST be: [Weighted Subject], [Weighted Action], [Environment], [Lighting/Effect].
-6. **Protagonist Appearance**: Do NOT describe the protagonist's physical appearance (e.g. hair color, clothing style, eye color, etc.). Their appearance is completely controlled by a reference image adapter. Just use generic tags like `1boy` or `1girl`, `protagonist`, and describe their action/emotion. You CAN describe the appearance of other secondary characters.
+6. **Character Appearance**: You MUST include strict visual descriptions of the characters as specified in the panel descriptions. Do not lose these distinctive visual traits, they are critical for maintaining character consistency across panels.
 7. **Output**: Strictly valid JSON — no markdown fences, no commentary.
 
 ## Output JSON Format
@@ -142,7 +142,7 @@ class PromptEngineer:
         logger.info("Converting panel narratives to SD prompts …")
         result = self.llm.invoke(messages)
         raw = result.content.strip()
-        logger.debug(f"Raw SD prompt JSON:\n{raw}")
+        logger.info(f"Raw SD prompt JSON:\n{raw}")
 
         # Parse JSON from LLM output
         parsed = self._parse_json(raw)

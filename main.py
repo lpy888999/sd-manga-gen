@@ -106,14 +106,20 @@ Examples:
     return parser.parse_args()
 
 
-def setup_logging(verbose: bool = False):
+def setup_logging(verbose: bool = False, log_file: str = None):
     """Configure logging for the pipeline."""
     level = logging.DEBUG if verbose else logging.INFO
+    
+    handlers = [logging.StreamHandler(sys.stdout)]
+    if log_file:
+        handlers.append(logging.FileHandler(log_file, mode="a", encoding="utf-8"))
+        
     logging.basicConfig(
         level=level,
         format="%(asctime)s │ %(name)-30s │ %(levelname)-5s │ %(message)s",
         datefmt="%H:%M:%S",
         force=True, # MUST FORCE OVERRIDE to prevent diffusers/transformers hijacking
+        handlers=handlers
     )
     
     # Explicitly set the root logger level
@@ -132,7 +138,13 @@ def setup_logging(verbose: bool = False):
 
 def main():
     args = parse_args()
-    setup_logging(args.verbose)
+    
+    # Determine output directory and setup logging to file
+    output_dir = Path(args.output).parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    log_file = output_dir / "pipeline.log"
+    
+    setup_logging(args.verbose, str(log_file))
 
     log = logging.getLogger("main")
     log.info("=" * 60)

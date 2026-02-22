@@ -173,7 +173,9 @@ class MangaPipeline:
             panel_count=panel_count,
             auto_threshold=self.auto_threshold,
         )
-        logger.info(f"Generated {len(panels)} panel descriptions.")
+        logger.info(f"Generated {len(panels)} panel descriptions:")
+        for i, p in enumerate(panels):
+            logger.info(f"  Panel {i+1}: {p}")
 
         # ── Step 2: SD prompt engineering ─────────────────────────────
         logger.info("=" * 60)
@@ -183,7 +185,7 @@ class MangaPipeline:
             panels=panels
         )
         for pp in panel_prompts:
-            logger.info(f"  Panel {pp.panel_number}: {pp.final_prompt[:120]}…")
+            logger.info(f"  Panel {pp.panel_number}: {pp.final_prompt}")
 
         # ── Step 2.5: Script extraction (TTS) ────────────────────────
         audio_result = None
@@ -192,6 +194,9 @@ class MangaPipeline:
             logger.info("STEP 2.5 · Script Extraction (TTS)")
             logger.info("=" * 60)
             scripts = self.script_generator.generate(panels)
+            for s in scripts:
+                for line in s.lines:
+                    logger.info(f"  Panel {s.panel} [{line.role}]: {line.text}")
 
             # ── Step 2.6: Audio synthesis ─────────────────────────────
             if self.audio_engine:
@@ -210,13 +215,40 @@ class MangaPipeline:
             self.sd_generator.seed = seed
 
         ip_image = None
+        face_embeds = None
         if reference_image and Path(reference_image).exists():
             logger.info(f"Loading reference image for IP-Adapter: {reference_image}")
             ip_image = Image.open(reference_image).convert("RGB")
-
+            
+            # --- InsightFace Extraction for FaceID Plus V2 ---
+            ip_cfg = self.config.get("sd", {}).get("ip_adapter", {})
+            if ip_cfg.get("enable", False) and ip_cfg.get("type") == "faceid_plus_v2":
+                logger.info("FaceID Plus V2 enabled. Initializing InsightFace to extract features...")
+                import cv2
+                import numpy as np
+                from insightface.app import FaceAnalysis
+                
+                # app initialized here to avoid heavy global import overhead if not used
+                app = FaceAnalysis(name="antelopev2", root='./', providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
+                app.prepare(ctx_id=0, det_size=(640, 640))
+                
+                # InsightFace expects BGR cv2 image
+                cv_img = cv2.cvtColor(np.array(ip_image), cv2.COLOR_RGB2BGR)
+                faces = app.get(cv_img)
+                
+                if not faces:
+                    logger.warning("No face detected in reference image by InsightFace! IP-Adapter may fail to inject character.")
+                else:
+                    logger.info(f"Detected {len(faces)} face(s). Using the most prominent one.")
+                    # Sort by bounding box size to get the main subject
+                    faces = sorted(faces, key=lambda x: (x.bbox[2]-x.bbox[0]) * (x.bbox[3]-x.bbox[1]), reverse=True)
+                    import torch
+                    face_embeds = torch.from_pretrained(faces[0].normed_embedding).unsqueeze(0)
+                    
         images = self.sd_generator.generate_panels(
             panel_prompts,
             ip_adapter_image=ip_image,
+            ip_adapter_face_embeds=face_embeds,
         )
 
         # ── Step 4: Layout composition ───────────────────────────────

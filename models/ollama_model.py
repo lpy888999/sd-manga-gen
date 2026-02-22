@@ -150,8 +150,8 @@ class OllamaChatModel:
 
         # ── Log output ───────────────────────────────────────────────
         if thinking:
-            logger.debug(f"  [thinking]: {thinking[:300]}")
-        logger.info(f"  [output]: {clean[:200]}")
+            logger.debug(f"  [thinking]:\n{thinking}")
+        logger.info(f"  [output]:\n{clean}")
         logger.info(f"{'—'*50}")
 
         return ChatResponse(
