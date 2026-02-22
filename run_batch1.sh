@@ -60,7 +60,7 @@ echo "== Standardizing ML dependencies (transformers, peft, diffusers) and TTS (
 # pip install --upgrade "transformers==4.44.2" "peft==0.12.0" "diffusers==0.30.3" "pydantic<2.0" "edge-tts" "pydub" "insightface>=0.7.3" "onnxruntime-gpu>=1.16.3" --quiet
 
 echo "== Downloading IP-Adapter Plus Models =="
-huggingface-cli download h94/IP-Adapter ip-adapter-plus_sdxl_vit-h.safetensors --subfolder sdxl_models --local-dir models/ip-adapter/sdxl_models --quiet
+huggingface-cli download h94/IP-Adapter sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors --local-dir models/ip-adapter --quiet
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
     PROJECT_DIR="$SLURM_SUBMIT_DIR"

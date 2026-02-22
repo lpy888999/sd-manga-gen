@@ -62,7 +62,7 @@ echo "== Standardizing ML dependencies (transformers, peft, diffusers) and TTS (
 echo "== Downloading IP-Adapter FaceID Models =="
 # huggingface-cli download h94/IP-Adapter-FaceID ip-adapter-faceid-plusv2_sdxl.bin --local-dir models/ip-adapter --quiet
 # huggingface-cli download h94/IP-Adapter-FaceID ip-adapter-faceid-plusv2_sdxl_lora.safetensors --local-dir models/ip-adapter --quiet
-huggingface-cli download h94/IP-Adapter ip-adapter-plus_sdxl_vit-h.safetensors --subfolder sdxl_models --local-dir models/ip-adapter/sdxl_models --quiet
+huggingface-cli download h94/IP-Adapter sdxl_models/ip-adapter-plus_sdxl_vit-h.safetensors --local-dir models/ip-adapter --quiet
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
     PROJECT_DIR="$SLURM_SUBMIT_DIR"
