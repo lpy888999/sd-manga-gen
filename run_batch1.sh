@@ -59,9 +59,7 @@ echo "   HF cache:  $HF_HOME"
 echo "== Standardizing ML dependencies (transformers, peft, diffusers) and TTS (edge-tts) =="
 # pip install --upgrade "transformers==4.44.2" "peft==0.12.0" "diffusers==0.30.3" "pydantic<2.0" "edge-tts" "pydub" "insightface>=0.7.3" "onnxruntime-gpu>=1.16.3" --quiet
 
-echo "== Downloading IP-Adapter FaceID Models =="
-# huggingface-cli download h94/IP-Adapter-FaceID ip-adapter-faceid-plusv2_sdxl.bin --local-dir models/ip-adapter --quiet
-# huggingface-cli download h94/IP-Adapter-FaceID ip-adapter-faceid-plusv2_sdxl_lora.safetensors --local-dir models/ip-adapter --quiet
+echo "== Downloading IP-Adapter Plus Models =="
 huggingface-cli download h94/IP-Adapter ip-adapter-plus_sdxl_vit-h.safetensors --subfolder sdxl_models --local-dir models/ip-adapter/sdxl_models --quiet
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
@@ -145,6 +143,8 @@ run_story() {
     local PROMPT="$3"
     local SEED="$4"
 
+    local CONFIG_FILE="$5"
+
     local OUT_DIR="${OUTPUT_BASE}/story_${IDX}"
     local OUT_IMG="${OUT_DIR}/comic.png"
     local LOG_FILE="${OUT_DIR}/pipeline.log"
@@ -152,12 +152,14 @@ run_story() {
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  Story $IDX / 5  |  ${PANELS} panels  |  seed=$SEED"
+    echo "  Story $IDX  |  ${PANELS} panels  |  seed=$SEED"
+    echo "  Config: $CONFIG_FILE"
     echo "  Prompt: ${PROMPT:0:80}..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
     python main.py \
-        --reference "tests/fixtures/meining.jpg" \
+        --config "$CONFIG_FILE" \
+        --reference "tests/fixtures/reference_character.jpg" \
         -p "$PROMPT" \
         --panels "$PANELS" \
         --seed "$SEED" \
@@ -174,33 +176,28 @@ run_story() {
 }
 
 # ═══════════════════════════════════════════════════════════════
-#  5 Pre-designed Stories (Ninja/Shinobi Theme)
+#  Male Protagonist IP-Adapter Plus (ViT-H) Test
 # ═══════════════════════════════════════════════════════════════
 
-# Story 1 — Midnight Duel (Action) / 4 panels
-run_story 1 4 \
-    "A young woman in green hanfu stands on a roof at night. There is a full moon. A bald man in grey heavy armor jumps down. He has a knife. The young woman in green hanfu and the bald man fight in the air. She lands on the roof. The bald man runs away." \
-    777
+MALE_PROMPT="A young man stands on a roof at night. There is a full moon glowing brightly behind him. A ninja in dark clothing jumps down towards him. He holds a sword. The young man and the ninja fight fiercely on the roof. The young man lands safely on the roof. The ninja was defeated."
+SEED=42
 
-# Story 2 — Hidden Village Training (Daily/Training) / 6 panels
-run_story 2 6 \
-    "A young woman in green hanfu is in a forest. She throws darts at a wooden board. An old teacher with white hair and white beard watches her. The young woman in green hanfu misses the target. She looks angry. The old teacher walks to her. He holds her arms to correct her pose. They both throw darts. Both hit the center. The young woman in green hanfu smiles." \
-    888
+# ─── Config Toggles ───
+# Create temporary config files for the experiment
+CONFIG_IP_ON="${OUTPUT_BASE}/config_ip_on.yaml"
+CONFIG_IP_OFF="${OUTPUT_BASE}/config_ip_off.yaml"
 
-# Story 3 — Secret Rendezvous (Romance/Casual) / 4 panels
-run_story 3 4 \
-    "A young woman in green hanfu sits on a bridge. The sun is setting. A young man in dark ninja clothes walks to her. He brings a bag of food. They sit and eat together. The young man touches the young woman in green hanfu's hair to remove a leaf." \
-    999
+cp config.yaml "$CONFIG_IP_ON"
+cp config.yaml "$CONFIG_IP_OFF"
 
-# Story 4 — Forest Infiltration (Adventure) / 6 panels
-run_story 4 6 \
-    "A young woman in green hanfu hides in tall grass. She looks at a big gate. A very fat and tall man with a giant scroll on his back is beside her. He points his finger forward. They walk quietly behind trees. A dog barks. A guard walks by. The young woman in green hanfu and the fat man stand very still. Then they jump over the wall." \
-    123
+# Disable IP-Adapter in the "OFF" config using sed (macOS/Linux compatible)
+sed -i.bak 's/enable: true/enable: false/g' "$CONFIG_IP_OFF" && rm -f "${CONFIG_IP_OFF}.bak"
 
-# Story 5 — The Mission Briefing (Mission/Serious) / 4 panels
-run_story 5 4 \
-    "A young woman in green hanfu is in a dark room. She looks at a map on a table. An old monk in a yellow robe points to a red mark on the map. A little boy stands by the door. He holds a lamp. The young woman in green hanfu nods her head." \
-    456
+# 1. Run with IP-Adapter ON (IP-Adapter Plus ViT-H)
+run_story "1_ip_on" 4 "$MALE_PROMPT" "$SEED" "$CONFIG_IP_ON"
+
+# 2. Run with IP-Adapter OFF 
+run_story "2_ip_off" 4 "$MALE_PROMPT" "$SEED" "$CONFIG_IP_OFF"
 
 # ═══════════════════════════════════════════════════════════════
 #  Cleanup

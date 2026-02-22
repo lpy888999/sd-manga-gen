@@ -21,6 +21,7 @@ Usage::
 """
 
 import logging
+import sys
 import time
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -110,6 +111,7 @@ class MangaPipeline:
 
         self.auto_threshold = panel_cfg.get("auto_threshold", 30)
         self.default_panel_count = panel_cfg.get("default_count", 4)
+        self._log_fh = None  # track our dedicated FileHandler
 
     # ── Factory ──────────────────────────────────────────────────────
     @classmethod
@@ -164,14 +166,22 @@ class MangaPipeline:
         t0 = time.time()
         do_audio = enable_audio if enable_audio is not None else self.tts_enabled
 
+        # Guarantee all logs (pipeline.*, models.*, root) are written to a file
+        # in the output directory.  diffusers/transformers model loading can
+        # silently remove root-logger handlers, so we attach our own.
+        self._ensure_file_logging(output_path)
+
         # ── Step 1: Story expansion ──────────────────────────────────
         logger.info("=" * 60)
         logger.info("STEP 1 · Story Expansion")
         logger.info("=" * 60)
+        use_ref = reference_image is not None and Path(reference_image).exists()
+        
         panels = self.story_expander.expand(
             user_prompt=user_prompt,
             panel_count=panel_count,
             auto_threshold=self.auto_threshold,
+            use_reference=use_ref,
         )
         logger.info(f"Generated {len(panels)} panel descriptions:")
         for i, p in enumerate(panels):
@@ -182,7 +192,8 @@ class MangaPipeline:
         logger.info("STEP 2 · Prompt Engineering")
         logger.info("=" * 60)
         panel_prompts = self.prompt_engineer.generate(
-            panels=panels
+            panels=panels,
+            use_reference=use_ref,
         )
         for pp in panel_prompts:
             logger.info(f"  Panel {pp.panel_number}: {pp.final_prompt}")
@@ -264,6 +275,63 @@ class MangaPipeline:
             "comic_path": output_path,
             "audio": audio_result,
         }
+
+    # ── logging helpers ──────────────────────────────────────────────
+    def _ensure_file_logging(self, output_path: str):
+        """
+        Attach a FileHandler to the *root* logger so that every logger
+        (pipeline.*, models.*, main, etc.) writes to ``pipeline.log``
+        in the output directory, regardless of what diffusers/transformers
+        do to the logging configuration during model loading.
+        """
+        log_dir = Path(output_path).parent
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "pipeline.log"
+
+        fmt = logging.Formatter(
+            "%(asctime)s │ %(name)-30s │ %(levelname)-5s │ %(message)s",
+            datefmt="%H:%M:%S",
+        )
+
+        root = logging.getLogger()
+        root.setLevel(logging.DEBUG)
+
+        # ── Remove stale / duplicate file handlers ────────────────────
+        resolved = log_file.resolve()
+        for h in root.handlers[:]:
+            if isinstance(h, logging.FileHandler):
+                try:
+                    if Path(h.baseFilename).resolve() == resolved:
+                        root.removeHandler(h)
+                        h.close()
+                except Exception:
+                    pass
+
+        # ── Attach a fresh FileHandler ────────────────────────────────
+        fh = logging.FileHandler(str(log_file), mode="a", encoding="utf-8")
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(fmt)
+        root.addHandler(fh)
+        self._log_fh = fh
+
+        # ── Ensure stdout handler exists (for shell redirect capture) ─
+        has_stream = any(
+            isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
+            for h in root.handlers
+        )
+        if not has_stream:
+            sh = logging.StreamHandler(sys.stdout)
+            sh.setLevel(logging.DEBUG)
+            sh.setFormatter(fmt)
+            root.addHandler(sh)
+
+        # ── Silence noisy third-party loggers ─────────────────────────
+        for lib in ("httpx", "httpcore", "urllib3", "diffusers",
+                    "transformers", "accelerate"):
+            logging.getLogger(lib).setLevel(logging.WARNING)
+
+        logger.debug(f"Pipeline file logging attached → {log_file}")
 
     # ── helpers ──────────────────────────────────────────────────────
     @staticmethod

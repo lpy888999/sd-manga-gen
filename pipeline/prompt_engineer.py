@@ -47,7 +47,8 @@ protagonist appears.
 3. **Explicit Layout & Bounding Boxes**: Declare character positions using a `layout` array. For each character, provide a `label` (MUST use "protagonist" for the main character), a `box` with normalized bounding box coordinates `[x_min, y_min, x_max, y_max]` from 0.0 to 1.0 (e.g., `[0.1, 0.2, 0.4, 0.9]`), and a brief `prompt` for that specific character.
 4. **NO Comic Formatting**: Do NOT include words like "comic", "manga", "speech bubble", "panel", "text", or "borders" in your `sd_prompt`, as this causes Structural image corruption.
 5. **Tag Format**: Use comma-separated phrases. Order MUST be: [Weighted Subject], [Weighted Action], [Environment], [Lighting/Effect].
-6. **Character Appearance**: You MUST include strict visual descriptions of the characters as specified in the panel descriptions. Do not lose these distinctive visual traits, they are critical for maintaining character consistency across panels.
+6. **Character Appearance & Feature Decoupling**:
+   {reference_instruction}
 7. **Output**: Strictly valid JSON — no markdown fences, no commentary.
 
 ## Output JSON Format
@@ -87,6 +88,23 @@ robot's metallic armor.
 }
 """
 
+# Instruction for Feature Decoupling when using IP-Adapter reference images
+REFERENCE_INSTRUCTION_ACTIVE = """\
+[IP-ADAPTER ACTIVE] A reference image is provided. To avoid 'Prompt Competition', \
+you MUST NOT use tags for facial anatomy (e.g., 'sharp jawline', 'blue eyes', \
+'high bridge nose'). Focus ONLY on:
+- Global traits (e.g., '1man', 'protagonist', 'messy black hair')
+- Clothing (e.g., 'black suit', 'green cloak')
+- Skin tone (e.g., 'pale skin')
+- Atmosphere and Expression (e.g., 'angry expression', 'cinematic lighting')\
+"""
+
+REFERENCE_INSTRUCTION_INACTIVE = """\
+You MUST include strict visual descriptions of the characters as specified in \
+the panel descriptions. Do not lose these distinctive visual traits, they are \
+critical for maintaining character consistency across panels.\
+"""
+
 
 class PromptEngineer:
     """Convert panel narratives into SD-optimised prompts with LoRA injection."""
@@ -115,6 +133,7 @@ class PromptEngineer:
     def generate(
         self,
         panels: List[str],
+        use_reference: bool = False,
     ) -> List[PanelPrompt]:
         """
         Convert narrative panel descriptions into SD prompts.
@@ -128,7 +147,8 @@ class PromptEngineer:
         -------
         list[PanelPrompt]
         """
-        system = SYSTEM_PROMPT
+        ref_instr = REFERENCE_INSTRUCTION_ACTIVE if use_reference else REFERENCE_INSTRUCTION_INACTIVE
+        system = SYSTEM_PROMPT.format(reference_instruction=ref_instr)
 
         # Build the user message with all panels
         panel_text = "\n".join(
@@ -138,6 +158,9 @@ class PromptEngineer:
             {"role": "system", "content": system},
             {"role": "user",   "content": panel_text},
         ]
+
+        if use_reference:
+            logger.info("IP-Adapter mode active: Prompt engineering will decouple facial features.")
 
         logger.info("Converting panel narratives to SD prompts …")
         result = self.llm.invoke(messages)

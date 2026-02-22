@@ -166,6 +166,10 @@ def main():
     # Lazy import to avoid loading heavy deps (torch, PIL, etc.) for --help
     from pipeline.manga_pipeline import MangaPipeline
 
+    # Re-setup logging after importing heavy ML libs (diffusers/transformers)
+    # which may hijack or clear root logger handlers during import.
+    setup_logging(args.verbose, str(log_file))
+
     # Build and run pipeline
     pipeline = MangaPipeline.from_config(args.config)
 

@@ -34,18 +34,21 @@ Panel 1: [Detailed visual description in 2-3 sentences]
 Panel 2: [Detailed visual description in 2-3 sentences]
 ... (up to Panel {panel_count})
 
+{reference_instruction}
+
 ## Few-Shot Example
-**User Input**: A samurai fighting a robot in the rain.
-**Output**:
-Panel 1: A lone samurai stands in a neon-lit alleyway during a heavy downpour. \
-Rain splashes off his straw hat, and his hand grips the hilt of a katana.
-Panel 2: A massive, rusted combat droid emerges from the shadows, its single red \
-eye glowing through the mist and steam.
-Panel 3: The samurai lunges forward, a flash of steel cutting through the raindrops. \
-Sparks fly as the blade clangs against the robot's metallic armor.
-Panel 4: The robot falls, its circuits sparking in a puddle. The samurai sheathes \
-his sword, his silhouette reflecting in the wet pavement as the neon lights flicker.
+...
 """
+
+REFERENCE_INSTRUCTION = """\
+## Character Consistency (IP-Adapter Mode)
+A reference image is provided. DO NOT describe the character's facial features \
+(eyes, nose, jawline) in detail. Focus ONLY on their:
+1. Hair (style/color)
+2. Clothing
+3. Skin tone (broadly)
+4. Expression and Action
+This prevents the prompt from conflicting with the reference face."""
 
 
 class StoryExpander:
@@ -65,6 +68,7 @@ class StoryExpander:
         user_prompt: str,
         panel_count: Optional[int] = None,
         auto_threshold: int = 30,
+        use_reference: bool = False,
     ) -> List[str]:
         """
         Expand *user_prompt* into *panel_count* panel descriptions.
@@ -92,11 +96,18 @@ class StoryExpander:
         if panel_count not in (4, 6):
             raise ValueError(f"panel_count must be 4 or 6, got {panel_count}")
 
-        system = SYSTEM_PROMPT.format(panel_count=panel_count)
+        ref_instr = REFERENCE_INSTRUCTION if use_reference else ""
+        system = SYSTEM_PROMPT.format(
+            panel_count=panel_count,
+            reference_instruction=ref_instr
+        )
         messages = [
             {"role": "system", "content": system},
             {"role": "user",   "content": user_prompt},
         ]
+
+        if use_reference:
+            logger.info("IP-Adapter mode active: Story expansion will favor decoupled traits.")
 
         logger.info(f"Expanding story into {panel_count} panels …")
         result = self.llm.invoke(messages)
