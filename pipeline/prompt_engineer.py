@@ -91,12 +91,12 @@ robot's metallic armor.
 # Instruction for Feature Decoupling when using IP-Adapter reference images
 REFERENCE_INSTRUCTION_ACTIVE = """\
 [IP-ADAPTER ACTIVE] A reference image is provided. To avoid 'Prompt Competition', \
-you MUST NOT use tags for facial anatomy (e.g., 'sharp jawline', 'blue eyes', \
-'high bridge nose'). Focus ONLY on:
-- Global traits (e.g., '1man', 'protagonist', 'messy black hair')
-- Clothing (e.g., 'black suit', 'green cloak')
-- Skin tone (e.g., 'pale skin')
-- Atmosphere and Expression (e.g., 'angry expression', 'cinematic lighting')\
+you MUST NOT describe ANY facial anatomy, skin color, or specific clothing colors \
+(e.g., 'sharp jawline', 'blue eyes', 'pale skin', 'red jacket'). Focus ONLY on:
+- Global traits (e.g., '1man', 'protagonist')
+- Action (e.g., 'lunging forward', 'running', 'fighting stance')
+- Location/Environment (e.g., 'in a dark alley', 'heavy rain')
+- Atmosphere and Expression (e.g., 'angry expression', 'cinematic lighting', 'action shot')\
 """
 
 REFERENCE_INSTRUCTION_INACTIVE = """\

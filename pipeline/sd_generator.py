@@ -354,7 +354,9 @@ class SDGenerator:
                 self._pipe.set_ip_adapter_scale(scale)
                 logger.info(f"Applying FaceID Plus V2 at scale {scale}")
             else:
-                self._pipe.set_ip_adapter_scale(0.0)
+                # Stage 1: Weak injection instead of 0.0 to plant the seed in latent space
+                self._pipe.set_ip_adapter_scale(0.3)
+                logger.info(f"Applying weak IP-Adapter injection at scale 0.3 for Stage 1")
 
         t2i_kwargs = {
             "prompt": prompt,
@@ -409,6 +411,9 @@ class SDGenerator:
             y_max = int(protagonist_box[3] * h)
             ImageDraw.Draw(mask).rectangle([x_min, y_min, x_max, y_max], fill=255)
             
+            # Debug: Save the mask to check alignment
+            mask.save("debug_mask.png")
+            
             # Note: Best to instantiate `IPAdapterMaskProcessor` once in init, but local instancing overhead is dwarfed by inference
             mask_tensor = IPAdapterMaskProcessor().preprocess([mask])
 
@@ -416,7 +421,7 @@ class SDGenerator:
                 "prompt": prompt,
                 "negative_prompt": negative_prompt or None,
                 "image": base_image,
-                "strength": 0.3,  # Gentle denoise to preserve semantic layout structure
+                "strength": 0.6,  # Higher strength (0.55 - 0.7) to allow changing face shape
                 "ip_adapter_image": ip_adapter_image, # Passed safely here during Phase 2
                 "cross_attention_kwargs": {"ip_adapter_masks": mask_tensor},
                 "guidance_scale": max(self.guidance_scale - 2.5, 4.0),
