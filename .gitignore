@@ -41,3 +41,4 @@ tests/test.log
 # Misc
 *.log
 .env
+*.ipynb
