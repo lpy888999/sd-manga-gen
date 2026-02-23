@@ -181,7 +181,7 @@ run_story() {
 #  Male Protagonist IP-Adapter Plus (ViT-H) Test
 # ═══════════════════════════════════════════════════════════════
 
-MALE_PROMPT="A young man stands on a roof at night. There is a full moon glowing brightly behind him. A ninja in dark clothing jumps down towards him. He holds a sword. The young man and the ninja fight fiercely on the roof. The young man lands safely on the roof. The ninja was defeated."
+MALE_PROMPT="A young woman stands on a roof at night. There is a full moon glowing brightly behind her. A ninja in dark clothing jumps down towards her. She holds a sword. The young woman and the ninja fight fiercely on the roof. The young woman lands safely on the roof. The ninja was defeated."
 SEED=42
 
 # ─── Config Toggles ───
