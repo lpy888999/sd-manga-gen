@@ -159,7 +159,7 @@ run_story() {
 
     python main.py \
         --config "$CONFIG_FILE" \
-        --reference "tests/fixtures/reference_character.png" \
+        --reference "tests/fixtures/face.png" \
         -p "$PROMPT" \
         --panels "$PANELS" \
         --seed "$SEED" \
