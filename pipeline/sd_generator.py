@@ -216,50 +216,28 @@ class SDGenerator:
 
         # ── Load IP-Adapter ──────────────────────────────────────────
         if self.ip_adapter and self.ip_adapter.get("enable", False):
-            ip_type = self.ip_adapter.get("type", "base")
-            if ip_type == "faceid_plus_v2":
-                faceid_model = self.ip_adapter.get("faceid_model_id", "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin")
-                faceid_lora = self.ip_adapter.get("faceid_lora_name", "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl_lora.safetensors")
-                
-                logger.info(f"Loading IP-Adapter FaceID Plus V2 weights ({faceid_model})...")
-                
-                # FaceID Plus v2 requires special subfolder handling or direct path if downloaded locally. We expect local files.
-                model_dir = Path(faceid_model).parent
-                model_name = Path(faceid_model).name
-                
-                self._pipe.load_ip_adapter(
-                    str(model_dir), 
-                    subfolder="", 
-                    weight_name=model_name
-                )
-                
-                logger.info(f"Loading required FaceID LoRA: {faceid_lora}")
-                self._pipe.load_lora_weights(faceid_lora, adapter_name="faceid")
-                self._pipe.set_adapters(adapter_names + ["faceid"], adapter_weights=adapter_weights + [1.0])
-                
-            else:
-                ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
-                sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
-                w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
-                
-                logger.info(f"Loading standard IP-Adapter weights...")
-                
-                if "vit-h" in w_name.lower():
-                    logger.info("Detected ViT-H IP-Adapter for SDXL. Explicitly loading ViT-H image encoder...")
-                    from transformers import CLIPVisionModelWithProjection
-                    image_encoder = CLIPVisionModelWithProjection.from_pretrained(
-                        ip_id,
-                        subfolder="models/image_encoder",
-                        torch_dtype=dtype,
-                    ).to(device)
-                    self._pipe.image_encoder = image_encoder
-                
-                self._pipe.load_ip_adapter(
-                    ip_id, 
-                    subfolder=sub_f, 
-                    weight_name=w_name
-                )
-                
+            ip_id = self.ip_adapter.get("model_id", "h94/IP-Adapter")
+            sub_f = self.ip_adapter.get("subfolder", "sdxl_models")
+            w_name = self.ip_adapter.get("weight_name", "ip-adapter_sdxl.bin")
+            
+            logger.info(f"Loading standard IP-Adapter weights...")
+            
+            if "vit-h" in w_name.lower():
+                logger.info("Detected ViT-H IP-Adapter for SDXL. Explicitly loading ViT-H image encoder...")
+                from transformers import CLIPVisionModelWithProjection
+                image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+                    ip_id,
+                    subfolder="models/image_encoder",
+                    torch_dtype=dtype,
+                ).to(device)
+                self._pipe.image_encoder = image_encoder
+            
+            self._pipe.load_ip_adapter(
+                ip_id, 
+                subfolder=sub_f, 
+                weight_name=w_name
+            )
+            
             # Disable by default to prevent unwanted injection
             self._pipe.set_ip_adapter_scale(0.0)
             logger.info("IP-Adapter loaded successfully (scale initialized to 0.0)")
@@ -269,12 +247,14 @@ class SDGenerator:
         I2IPipeClass = StableDiffusionXLImg2ImgPipeline if is_xl else StableDiffusionImg2ImgPipeline
         self._pipe_i2i = I2IPipeClass(**self._pipe.components)
         
-        # Sync scheduler for I2I pipe
+        # Sync scheduler and encoder for I2I pipe
         self._pipe_i2i.scheduler = DPMSolverMultistepScheduler.from_config(
             self._pipe.scheduler.config,
             use_karras_sigmas=True,
             algorithm_type="dpmsolver++",
         )
+        if getattr(self._pipe, "image_encoder", None) is not None:
+            self._pipe_i2i.image_encoder = self._pipe.image_encoder
 
         # Optimization for VRAM
         if device == "cuda":
@@ -295,7 +275,6 @@ class SDGenerator:
         height: Optional[int] = None,
         seed: Optional[int] = None,
         ip_adapter_image: Optional[Image.Image] = None,
-        ip_adapter_face_embeds: Optional["torch.Tensor"] = None,
         layouts: Optional[List[Dict[str, Any]]] = None,
     ) -> Image.Image:
         """
@@ -324,12 +303,15 @@ class SDGenerator:
         w = round(w / 8) * 8
         h = round(h / 8) * 8
 
-        # 2. Auto-upscale for SDXL
-        if "xl" in self.model_path.lower() and (w < 1024 and h < 1024):
-            logger.warning(f"Resolution {w}x{h} is too low for SDXL. Upscaling to ~1024 primary edge.")
-            ratio = 1024 / max(w, h)
-            w = round((w * ratio) / 8) * 8
-            h = round((h * ratio) / 8) * 8
+        # 2. Auto-upscale for SDXL stability (Minimum ~1024 primary edge)
+        # SDXL latent space degrades structurally at low resolutions (e.g., 768x512)
+        if "xl" in self.model_path.lower():
+            primary_edge = max(w, h)
+            if primary_edge < 1024:
+                logger.warning(f"Resolution {w}x{h} is too low for stable SDXL generation. Upscaling primary edge to 1024.")
+                ratio = 1024 / primary_edge
+                w = round((w * ratio) / 8) * 8
+                h = round((h * ratio) / 8) * 8
 
         s = seed if seed is not None else self.seed
         generator = None
@@ -344,96 +326,59 @@ class SDGenerator:
         # Determine if IP-Adapter is active on the UNet
         has_ip = getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None
 
-        # Determine IP-Adapter mode
-        ip_mode = self.ip_adapter.get("type", "base") if self.ip_adapter else "base"
-        scale = self.ip_adapter.get("scale", 0.5) if self.ip_adapter else 0.5
-        
-        if has_ip:
-            if ip_mode == "faceid_plus_v2" and ip_adapter_face_embeds is not None:
-                # FaceID applies directly in Text2Img phase at the full user-defined scale
-                self._pipe.set_ip_adapter_scale(scale)
-                logger.info(f"Applying FaceID Plus V2 at scale {scale}")
-            else:
-                # Stage 1: Weak injection instead of 0.0 to plant the seed in latent space
-                self._pipe.set_ip_adapter_scale(0.3)
-                logger.info(f"Applying weak IP-Adapter injection at scale 0.3 for Stage 1")
-
         t2i_kwargs = {
             "prompt": prompt,
             "negative_prompt": negative_prompt or None,
             "width": w,
             "height": h,
-            "guidance_scale": self.guidance_scale if not has_ip else max(self.guidance_scale - 1.5, 5.0),
-            "num_inference_steps": self.num_inference_steps,
+            "guidance_scale": 5.5,  # 5.0 - 6.0 recommended for Stage 1 base composition
+            "num_inference_steps": 32,  # 28 - 36 recommended for Stage 1
             "generator": generator,
         }
-        
+
         # CRITICAL FIX for Diffusers ValueError: 
         # If the UNet has encoder_hid_proj patched for IP-Adapter, it demands `image_embeds` in `added_conditions`.
-        # Therefore, we MUST pass `ip_adapter_image` even if the scale is 0.0.
+        # Therefore, we MUST pass `ip_adapter_image` but set the scale to 0.0 for a pure Stage 1.
         if has_ip and ip_adapter_image is not None:
             t2i_kwargs["ip_adapter_image"] = ip_adapter_image
             
-            # Additional logic for FaceID Plus V2
-            if ip_mode == "faceid_plus_v2" and ip_adapter_face_embeds is not None:
-                t2i_kwargs["cross_attention_kwargs"] = {"ip_adapter_image_embeds": ip_adapter_face_embeds}
+            self._pipe.set_ip_adapter_scale(0.0)
+            logger.info("Stage 1: Text2Img (IP-Adapter scale forced to 0.0 for pure composition)")
             
         base_image = self._pipe(**t2i_kwargs).images[0]
 
-        # ── Phase 2: Img2Img (Injecting IP-Adapter Appearance) ──
-        # Skip Phase 2 entirely if we are using FaceID Plus V2 (FaceID already injected in Phase 1)
-        if ip_mode == "faceid_plus_v2":
-            logger.info("Panel generated successfully (FaceID Plus V2 injected inline).")
-            return base_image
-
-        # Standard IP-Adapter logic (Masked Two-Stage process)
-        # Process layout coordinates to detect protagonist
-        protagonist_box = None
-        if layouts is not None and len(layouts) > 0:
-            for lay in layouts:
-                lbl = str(lay.get("label", "")).lower()
-                if "protagonist" in lbl or "hero" in lbl or "main" in lbl:
-                    protagonist_box = lay.get("box")
-                    break
-            if protagonist_box is None and len(layouts) == 1:
-                protagonist_box = layouts[0].get("box")
-
-        if has_ip and ip_adapter_image and protagonist_box and len(protagonist_box) == 4:
-            logger.info("Stage 2: Masked IP-Adapter Refinement")
+        # ── Phase 2: Img2Img (Identity Regularization) ──
+        # 2-Stage Identity Regularization
+        # Only run if generic IP-Adapter is active and reference provided
+        if has_ip and ip_adapter_image:
+            logger.info("Stage 2: Img2Img Identity Regularization (Global)")
             
-            self._pipe_i2i.set_ip_adapter_scale(scale)
+            # Debug: Save the base image from Stage 1 for comparison
+            import time
+            debug_base_name = f"debug_stage1_{int(time.time())}.png"
+            base_image.save(debug_base_name)
+            logger.info(f"Saved Stage 1 unrefined base image to {debug_base_name}")
             
-            # Prepare Mask
-            mask = Image.new("L", (w, h), 0)
-            x_min = int(protagonist_box[0] * w)
-            y_min = int(protagonist_box[1] * h)
-            x_max = int(protagonist_box[2] * w)
-            y_max = int(protagonist_box[3] * h)
-            ImageDraw.Draw(mask).rectangle([x_min, y_min, x_max, y_max], fill=255)
+            # Set IP-Adapter scale to medium strength (0.25 - 0.45 recommended)
+            ip_scale_stage2 = 0.35
+            self._pipe_i2i.set_ip_adapter_scale(ip_scale_stage2)
             
-            # Debug: Save the mask to check alignment
-            mask.save("debug_mask.png")
-            
-            # Note: Best to instantiate `IPAdapterMaskProcessor` once in init, but local instancing overhead is dwarfed by inference
-            mask_tensor = IPAdapterMaskProcessor().preprocess([mask])
-
             i2i_kwargs = {
                 "prompt": prompt,
                 "negative_prompt": negative_prompt or None,
                 "image": base_image,
-                "strength": 0.6,  # Higher strength (0.55 - 0.7) to allow changing face shape
-                "ip_adapter_image": ip_adapter_image, # Passed safely here during Phase 2
-                "cross_attention_kwargs": {"ip_adapter_masks": mask_tensor},
-                "guidance_scale": max(self.guidance_scale - 2.5, 4.0),
-                "num_inference_steps": self.num_inference_steps,
+                "strength": 0.28,  # 0.22 - 0.32 recommended. Low strength prevents composition collapse
+                "ip_adapter_image": ip_adapter_image,
+                "guidance_scale": 5.0,  # 4.5 - 5.5 recommended
+                "num_inference_steps": 25,  # 20 - 28 recommended
                 "generator": generator, # Reusing the seed to share sequence noise
             }
             
             final_image = self._pipe_i2i(**i2i_kwargs).images[0]
-            logger.info("Panel generated successfully (2-Stage Pipeline).")
+            logger.info("Panel generated successfully (2-Stage IP-Adapter Pipeline).")
             return final_image
             
-        logger.info("Panel generated successfully (1-Stage Pipeline).")
+        logger.info("Panel generated successfully (1-Stage Default Pipeline).")
         return base_image
 
     def generate_panels(
@@ -441,7 +386,6 @@ class SDGenerator:
         panel_prompts: list,
         seed_offset: int = 0,
         ip_adapter_image: Optional[Image.Image] = None,
-        ip_adapter_face_embeds: Optional["torch.Tensor"] = None,
     ) -> List[Image.Image]:
         """
         Generate images for all panels.
@@ -469,7 +413,6 @@ class SDGenerator:
                 negative_prompt=pp.negative_prompt,
                 seed=panel_seed,
                 ip_adapter_image=ip_adapter_image,
-                ip_adapter_face_embeds=ip_adapter_face_embeds,
                 layouts=getattr(pp, "layouts", []),
             )
             images.append(img)
