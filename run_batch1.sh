@@ -118,13 +118,26 @@ echo "== Starting Ollama server (Port: ${RANDOM_PORT}, GPU: ${CUDA_VISIBLE_DEVIC
 # 显式使用环境变量运行并将日志重定向到文件以减少 Slurm 输出噪音
 $OLLAMA serve > "${OUTPUT_BASE}/ollama_server.log" 2>&1 &
 OLLAMA_PID=$!
-sleep 15
-
-$OLLAMA list || { echo "ERROR: Ollama failed to start"; kill $OLLAMA_PID 2>/dev/null; exit 1; }
+# ─── Improved Wait Logic ───
+echo "== Waiting for Ollama server to be ready... =="
+MAX_RETRIES=12
+COUNT=0
+while ! $OLLAMA list > /dev/null 2>&1; do
+    COUNT=$((COUNT + 1))
+    if [ $COUNT -ge $MAX_RETRIES ]; then
+        echo "ERROR: Ollama server failed to start after $MAX_RETRIES attempts."
+        echo "Last 20 lines of ollama_server.log:"
+        tail -n 20 "${OUTPUT_BASE}/ollama_server.log"
+        kill $OLLAMA_PID 2>/dev/null
+        exit 1
+    fi
+    sleep 5
+    echo "  Attempt $COUNT/$MAX_RETRIES..."
+done
+echo "== Ollama server is ready! =="
 
 echo "== Pulling LLM models =="
 $OLLAMA pull qwen3:8b || echo "WARNING: failed to pull qwen3:8b"
-$OLLAMA pull qwen3-vl:4b || echo "WARNING: failed to pull qwen3-vl:4b"
 
 echo "== Verifying Ollama GPU Usage =="
 nvidia-smi
@@ -148,6 +161,7 @@ run_story() {
     local OUT_DIR="${OUTPUT_BASE}/story_${IDX}"
     local OUT_IMG="${OUT_DIR}/comic.png"
     local LOG_FILE="${OUT_DIR}/pipeline.log"
+    local CONSOLE_LOG="${OUT_DIR}/console.log"
     mkdir -p "$OUT_DIR"
 
     echo ""
@@ -159,7 +173,7 @@ run_story() {
 
     python main.py \
         --config "$CONFIG_FILE" \
-        --reference "tests/fixtures/meining.jpg" \
+        --reference "tests/fixtures/luffy.jpg" \
         -p "$PROMPT" \
         --panels "$PANELS" \
         --seed "$SEED" \
@@ -167,14 +181,14 @@ run_story() {
         --audio-dir "${OUT_DIR}/audio" \
         ${PROMPT_CACHE:+--prompt-cache "$PROMPT_CACHE"} \
         -o "$OUT_IMG" \
-        -v >> "$LOG_FILE"
+        -v > "$CONSOLE_LOG"
 
     if [ -f "$OUT_IMG" ]; then
         echo "  ✅ Story $IDX complete → $OUT_IMG"
     else
-        echo "  ❌ Story $IDX FAILED — check $LOG_FILE"
-        echo "  Last 20 lines of $LOG_FILE:"
-        tail -n 20 "$LOG_FILE"
+        echo "  ❌ Story $IDX FAILED — check $LOG_FILE or $CONSOLE_LOG"
+        echo "  Last 20 lines of console output:"
+        tail -n 20 "$CONSOLE_LOG"
     fi
 }
 
@@ -182,7 +196,7 @@ run_story() {
 #  Male Protagonist IP-Adapter Plus (ViT-H) Test
 # ═══════════════════════════════════════════════════════════════
 
-MALE_PROMPT="A young woman stands on a roof at night. There is a full moon glowing brightly behind her. A ninja in dark clothing jumps down towards her. She holds a sword. The young woman and the ninja fight fiercely on the roof. The young woman lands safely on the roof. The ninja was defeated."
+MALE_PROMPT="A young man stands on a roof at night. There is a full moon glowing brightly behind him. A ninja in dark clothing jumps down towards him. He holds a sword. The young man and the ninja fight fiercely on the roof. The young man lands safely on the roof. The ninja was defeated."
 SEED=42
 
 # ─── Config Toggles ───

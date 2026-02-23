@@ -126,7 +126,6 @@ $OLLAMA list || { echo "ERROR: Ollama failed to start"; kill $OLLAMA_PID 2>/dev/
 
 echo "== Pulling LLM models =="
 $OLLAMA pull qwen3:8b || echo "WARNING: failed to pull qwen3:8b"
-$OLLAMA pull qwen3-vl:4b || echo "WARNING: failed to pull qwen3-vl:4b"
 
 echo "== Verifying Ollama GPU Usage =="
 nvidia-smi
@@ -148,6 +147,7 @@ run_story() {
     local OUT_DIR="${OUTPUT_BASE}/story_${IDX}"
     local OUT_IMG="${OUT_DIR}/comic.png"
     local LOG_FILE="${OUT_DIR}/pipeline.log"
+    local CONSOLE_LOG="${OUT_DIR}/console.log"
     mkdir -p "$OUT_DIR"
 
     echo ""
@@ -164,12 +164,12 @@ run_story() {
         --audio \
         --audio-dir "${OUT_DIR}/audio" \
         -o "$OUT_IMG" \
-        -v >> "$LOG_FILE" 2>&1
+        -v > "$CONSOLE_LOG"
 
     if [ -f "$OUT_IMG" ]; then
         echo "  ✅ Story $IDX complete → $OUT_IMG"
     else
-        echo "  ❌ Story $IDX FAILED — check $LOG_FILE"
+        echo "  ❌ Story $IDX FAILED — check $LOG_FILE or $CONSOLE_LOG"
     fi
 }
 
