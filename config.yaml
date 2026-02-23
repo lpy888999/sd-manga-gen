@@ -27,7 +27,7 @@ sd:
       weight: 0.6
 
     # (optional) extra trigger words injected into every prompt
-    trigger_words: ["manga style"]               # e.g. ["manga style", "thick lineart"]
+    trigger_words: []               # e.g. ["manga style", "thick lineart"]
 
   # IP-Adapter — keeps character consistent based on reference image
   ip_adapter:
@@ -38,7 +38,7 @@ sd:
     # Settings for type: "base"
     model_id: "h94/IP-Adapter"
     subfolder: "sdxl_models"
-    weight_name: "ip-adapter-plus_sdxl_vit-h.safetensors"
+    weight_name: "ip-adapter-plus-face_sdxl_vit-h.bin"
     
     # Settings for type: "faceid_plus_v2"
     faceid_model_id: "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin"

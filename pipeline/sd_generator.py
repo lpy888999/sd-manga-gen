@@ -242,19 +242,7 @@ class SDGenerator:
             self._pipe.set_ip_adapter_scale(0.0)
             logger.info("IP-Adapter loaded successfully (scale initialized to 0.0)")
 
-        # Initialize Img2Img pipeline sharing the exact same components
-        is_xl = "xl" in self.model_path.lower() or "sdxl" in self.model_path.lower()
-        I2IPipeClass = StableDiffusionXLImg2ImgPipeline if is_xl else StableDiffusionImg2ImgPipeline
-        self._pipe_i2i = I2IPipeClass(**self._pipe.components)
-        
-        # Sync scheduler and encoder for I2I pipe
-        self._pipe_i2i.scheduler = DPMSolverMultistepScheduler.from_config(
-            self._pipe.scheduler.config,
-            use_karras_sigmas=True,
-            algorithm_type="dpmsolver++",
-        )
-        if getattr(self._pipe, "image_encoder", None) is not None:
-            self._pipe_i2i.image_encoder = self._pipe.image_encoder
+
 
         # Optimization for VRAM
         if device == "cuda":
@@ -320,8 +308,7 @@ class SDGenerator:
 
         logger.info(f"Generating image ({w}×{h}) …")
 
-        # ── Phase 1: Text2Img (Pure Scene/Layout) ──
-        logger.info("Stage 1: Text2Img generation (Pure Layout)")
+        logger.info("Generating via Text2Img")
         
         # Determine if IP-Adapter is active on the UNet
         has_ip = getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None
@@ -331,55 +318,22 @@ class SDGenerator:
             "negative_prompt": negative_prompt or None,
             "width": w,
             "height": h,
-            "guidance_scale": 5.5,  # 5.0 - 6.0 recommended for Stage 1 base composition
-            "num_inference_steps": 32,  # 28 - 36 recommended for Stage 1
+            "guidance_scale": self.guidance_scale,
+            "num_inference_steps": self.num_inference_steps,
             "generator": generator,
         }
 
-        # CRITICAL FIX for Diffusers ValueError: 
-        # If the UNet has encoder_hid_proj patched for IP-Adapter, it demands `image_embeds` in `added_conditions`.
-        # Therefore, we MUST pass `ip_adapter_image` but set the scale to 0.0 for a pure Stage 1.
         if has_ip and ip_adapter_image is not None:
             t2i_kwargs["ip_adapter_image"] = ip_adapter_image
             
-            self._pipe.set_ip_adapter_scale(0.0)
-            logger.info("Stage 1: Text2Img (IP-Adapter scale forced to 0.0 for pure composition)")
+            # Use the configured scale (default 0.7) for a 1-stage generation
+            scale = self.ip_adapter.get("scale", 0.7) if self.ip_adapter else 0.7
+            self._pipe.set_ip_adapter_scale(scale)
+            logger.info(f"Text2Img with IP-Adapter (scale={scale})")
             
-        base_image = self._pipe(**t2i_kwargs).images[0]
-
-        # ── Phase 2: Img2Img (Identity Regularization) ──
-        # 2-Stage Identity Regularization
-        # Only run if generic IP-Adapter is active and reference provided
-        if has_ip and ip_adapter_image:
-            logger.info("Stage 2: Img2Img Identity Regularization (Global)")
-            
-            # Debug: Save the base image from Stage 1 for comparison
-            import time
-            debug_base_name = f"debug_stage1_{int(time.time())}.png"
-            base_image.save(debug_base_name)
-            logger.info(f"Saved Stage 1 unrefined base image to {debug_base_name}")
-            
-            # Set IP-Adapter scale to medium strength (0.25 - 0.45 recommended)
-            ip_scale_stage2 = 0.35
-            self._pipe_i2i.set_ip_adapter_scale(ip_scale_stage2)
-            
-            i2i_kwargs = {
-                "prompt": prompt,
-                "negative_prompt": negative_prompt or None,
-                "image": base_image,
-                "strength": 0.28,  # 0.22 - 0.32 recommended. Low strength prevents composition collapse
-                "ip_adapter_image": ip_adapter_image,
-                "guidance_scale": 5.0,  # 4.5 - 5.5 recommended
-                "num_inference_steps": 25,  # 20 - 28 recommended
-                "generator": generator, # Reusing the seed to share sequence noise
-            }
-            
-            final_image = self._pipe_i2i(**i2i_kwargs).images[0]
-            logger.info("Panel generated successfully (2-Stage IP-Adapter Pipeline).")
-            return final_image
-            
-        logger.info("Panel generated successfully (1-Stage Default Pipeline).")
-        return base_image
+        final_image = self._pipe(**t2i_kwargs).images[0]
+        logger.info("Panel generated successfully.")
+        return final_image
 
     def generate_panels(
         self,
