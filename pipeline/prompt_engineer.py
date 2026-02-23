@@ -27,42 +27,63 @@ class PanelPrompt:
     sd_prompt: str                       # raw tags from LLM
     final_prompt: str = ""               # after LoRA / quality injection
     negative_prompt: str = ""
-    layouts: List[Dict[str, Any]] = field(default_factory=list) # Bounding boxes for IP-Adapter masking
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "panel_number": self.panel_number,
+            "camera_angle": self.camera_angle,
+            "panel_design": self.panel_design,
+            "sd_prompt": self.sd_prompt,
+            "final_prompt": self.final_prompt,
+            "negative_prompt": self.negative_prompt,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PanelPrompt":
+        return cls(
+            panel_number=data.get("panel_number", 1),
+            camera_angle=data.get("camera_angle", ""),
+            panel_design=data.get("panel_design", ""),
+            sd_prompt=data.get("sd_prompt", ""),
+            final_prompt=data.get("final_prompt", ""),
+            negative_prompt=data.get("negative_prompt", ""),
+        )
 
 
 # ── System prompt — the "SD Engineer" ────────────────────────────────
 SYSTEM_PROMPT = """\
 ## Role
-You are an expert Prompt Engineer for Stable Diffusion. You specialize in \
-converting natural language scenes into high-quality, tag-based prompts.
+You are an expert Prompt Engineer for Stable Diffusion XL (SDXL). You specialize in \
+converting narrative panels into highly effective, natural language prompts.
 
 ## Task
-Convert the provided narrative panels into technical SD prompts. You must \
-incorporate consistent character visual traits into every panel where the \
-protagonist appears.
+Convert the provided narrative panels into SDXL prompts. SDXL has excellent \
+natural language understanding, so you should write cohesive, descriptive sentences \
+rather than disconnected tags. Ensure consistent character visual traits across \
+panels where the protagonist appears.
 
 ## Constraints
-1. **Strict Brevity (77-Token Limit)**: SDXL's CLIP encoder only processes the first 77 tokens. You MUST extract ONLY the most essential visual keywords. Maximum 30 tags per prompt. Remove all filler words (e.g., "a", "the", "in", "with").
-2. **Prioritized Weighting**: Apply higher weight to the most critical subjects and actions using SD syntax, e.g., `(1boy:1.2)`, `(swinging sword:1.3)`. Keep backgrounds and secondary elements unweighted to save space.
-3. **Explicit Layout & Bounding Boxes**: Declare character positions using a `layout` array. For each character, provide a `label` (MUST use "protagonist" for the main character), a `box` with normalized bounding box coordinates `[x_min, y_min, x_max, y_max]` from 0.0 to 1.0 (e.g., `[0.1, 0.2, 0.4, 0.9]`), and a brief `prompt` for that specific character.
-4. **NO Comic Formatting**: Do NOT include words like "comic", "manga", "speech bubble", "panel", "text", or "borders" in your `sd_prompt`, as this causes Structural image corruption.
-5. **Tag Format & Exact Character Count**: The VERY FIRST tags MUST define the exact number and gender of characters in the entire scene using Danbooru-style count tags (e.g., `1boy`, `1girl`, `2boys`, `1boy, 1girl`, `3girls`, `multiple girls`, `crowd`). Order MUST be: [Character Count Tags], [Weighted Subject], [Weighted Action], [Environment], [Lighting/Effect].
-6. **Character Appearance & Feature Decoupling**:
+1. **Length Limit (77-Token Limit)**: SDXL's CLIP encoder prioritizing the first \
+77 tokens. Keep your description to 1-2 concise, visually dense sentences. \
+Remove non-essential narrative fluff, but keep it as natural English.
+2. **Prioritized Weighting**: Apply higher weight to the most critical subjects \
+and actions using SD syntax if necessary, e.g., `(swinging sword:1.2)`, but \
+rely mostly on clear natural language.
+3. **NO Comic Formatting**: Do NOT include words like "comic", "manga", "speech \
+bubble", "panel", "text", or "borders" in your `sd_prompt`, as this causes structural \
+image corruption.
+4. **Character Appearance & Feature Decoupling**:
    {reference_instruction}
-7. **Output**: Strictly valid JSON — no markdown fences, no commentary.
+5. **Output**: Strictly valid JSON — no markdown fences, no commentary.
 
 ## Output JSON Format
 {{
   "comic_output": [
     {{
       "panel_number": 1,
-      "camera_angle": "Wide Shot / Close-up / etc.",
-      "panel_design": "Explain the exact scene layout, number of characters, and character positioning.",
-      "layout": [
-        {{"label": "protagonist", "box": [0.1, 0.2, 0.4, 0.9], "prompt": "1man, protagonist, lunging forward"}},
-        {{"label": "villain", "box": [0.6, 0.2, 0.9, 0.9], "prompt": "1man, wizard, black robe"}}
-      ],
-      "sd_prompt": "tags, go, here, masterpiece, high quality"
+      "camera_angle": "Wide Shot / Close-up / Action Shot / etc.",
+      "panel_design": "Explain the exact scene layout, number of characters, and visual focus.",
+      "sd_prompt": "A natural language description of the scene goes here."
     }}
   ]
 }}
@@ -77,12 +98,8 @@ robot's metallic armor.
     {{
       "panel_number": 3,
       "camera_angle": "Action Shot",
-      "panel_design": "2 characters. The protagonist is on the left lunging forward, the giant robot is on the right. Heavy rain environment.",
-      "layout": [
-        {{"label": "protagonist", "box": [0.05, 0.2, 0.45, 0.9], "prompt": "1man, protagonist, fighting stance"}},
-        {{"label": "robot", "box": [0.55, 0.1, 0.95, 0.9], "prompt": "giant robot, metallic armor, blocking"}}
-      ],
-      "sd_prompt": "(1man:1.2), protagonist, (lunging forward:1.3), swinging katana, sparks flying, fighting giant robot, heavy rain, neon trim light"
+      "panel_design": "The protagonist and a giant robot in heavy rain. The focus is on the collision of the katana and the metallic armor.",
+      "sd_prompt": "The protagonist lunges forward with a fighting stance, swinging a katana. Sparks are flying as the sword hits the giant robot's metallic armor in heavy rain, neon trim light."
     }}
   ]
 }}
@@ -235,7 +252,6 @@ class PromptEngineer:
                 sd_prompt=sd_prompt,
                 final_prompt=final_prompt,
                 negative_prompt=self.negative_prompt,
-                layouts=item.get("layout", []),
             ))
 
         if len(prompts) != expected_count:

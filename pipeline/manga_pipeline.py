@@ -137,6 +137,7 @@ class MangaPipeline:
         seed: Optional[int] = None,
         enable_audio: Optional[bool] = None,
         audio_dir: Optional[str] = None,
+        prompt_cache: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Run the full manga generation pipeline.
@@ -157,12 +158,15 @@ class MangaPipeline:
             Override tts.enabled from config.  None = use config.
         audio_dir : str | None
             Override tts.output_dir from config for audio files.
+        prompt_cache : str | None
+            Path to JSON file to save/load generated panel prompts.
 
         Returns
         -------
         dict
             ``{"comic_path": str, "audio": dict | None}``
         """
+        import json
         t0 = time.time()
         do_audio = enable_audio if enable_audio is not None else self.tts_enabled
 
@@ -171,32 +175,63 @@ class MangaPipeline:
         # silently remove root-logger handlers, so we attach our own.
         self._ensure_file_logging(output_path)
 
-        # ── Step 1: Story expansion ──────────────────────────────────
-        logger.info("=" * 60)
-        logger.info("STEP 1 · Story Expansion")
-        logger.info("=" * 60)
-        use_ref = reference_image is not None and Path(reference_image).exists()
+        # ── Step 1 & 2: Story and Prompts (w/ Caching) ───────────────
+        panel_prompts = None
+        panels = None
         
-        panels = self.story_expander.expand(
-            user_prompt=user_prompt,
-            panel_count=panel_count,
-            auto_threshold=self.auto_threshold,
-            use_reference=use_ref,
-        )
-        logger.info(f"Generated {len(panels)} panel descriptions:")
-        for i, p in enumerate(panels):
-            logger.info(f"  Panel {i+1}: {p}")
+        if prompt_cache and Path(prompt_cache).exists():
+            logger.info("=" * 60)
+            logger.info(f"LOADING CCH · Reading prompts from {prompt_cache}")
+            logger.info("=" * 60)
+            try:
+                with open(prompt_cache, "r", encoding="utf-8") as f:
+                    cache_data = json.load(f)
+                panel_prompts = [PanelPrompt.from_dict(d) for d in cache_data.get("panel_prompts", [])]
+                panels = cache_data.get("panels", [])
+                logger.info(f"Loaded {len(panel_prompts)} prompts from cache.")
+                for pp in panel_prompts:
+                    logger.info(f"  Panel {pp.panel_number}: {pp.final_prompt}")
+            except Exception as e:
+                logger.error(f"Failed to load prompt cache: {e}")
+                # Fall through to generate normally
+                
+        if not panel_prompts:
+            logger.info("=" * 60)
+            logger.info("STEP 1 · Story Expansion")
+            logger.info("=" * 60)
+            use_ref = reference_image is not None and Path(reference_image).exists()
+            
+            panels = self.story_expander.expand(
+                user_prompt=user_prompt,
+                panel_count=panel_count,
+                auto_threshold=self.auto_threshold,
+                use_reference=use_ref,
+            )
+            logger.info(f"Generated {len(panels)} panel descriptions:")
+            for i, p in enumerate(panels):
+                logger.info(f"  Panel {i+1}: {p}")
 
-        # ── Step 2: SD prompt engineering ─────────────────────────────
-        logger.info("=" * 60)
-        logger.info("STEP 2 · Prompt Engineering")
-        logger.info("=" * 60)
-        panel_prompts = self.prompt_engineer.generate(
-            panels=panels,
-            use_reference=use_ref,
-        )
-        for pp in panel_prompts:
-            logger.info(f"  Panel {pp.panel_number}: {pp.final_prompt}")
+            logger.info("=" * 60)
+            logger.info("STEP 2 · Prompt Engineering")
+            logger.info("=" * 60)
+            panel_prompts = self.prompt_engineer.generate(
+                panels=panels,
+                use_reference=use_ref,
+            )
+            for pp in panel_prompts:
+                logger.info(f"  Panel {pp.panel_number}: {pp.final_prompt}")
+
+            # Save to cache if provided
+            if prompt_cache:
+                logger.info(f"Saving generated prompts to cache: {prompt_cache}")
+                cache_path = Path(prompt_cache)
+                cache_path.parent.mkdir(parents=True, exist_ok=True)
+                cache_data = {
+                    "panels": panels,
+                    "panel_prompts": [p.to_dict() for p in panel_prompts]
+                }
+                with open(prompt_cache, "w", encoding="utf-8") as f:
+                    json.dump(cache_data, f, ensure_ascii=False, indent=2)
 
         # ── Step 2.5: Script extraction (TTS) ────────────────────────
         audio_result = None

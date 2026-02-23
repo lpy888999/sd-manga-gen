@@ -142,8 +142,8 @@ run_story() {
     local PANELS="$2"
     local PROMPT="$3"
     local SEED="$4"
-
     local CONFIG_FILE="$5"
+    local PROMPT_CACHE="$6"
 
     local OUT_DIR="${OUTPUT_BASE}/story_${IDX}"
     local OUT_IMG="${OUT_DIR}/comic.png"
@@ -159,12 +159,13 @@ run_story() {
 
     python main.py \
         --config "$CONFIG_FILE" \
-        --reference "tests/fixtures/face.png" \
+        --reference "tests/fixtures/meining.jpg" \
         -p "$PROMPT" \
         --panels "$PANELS" \
         --seed "$SEED" \
         --audio \
         --audio-dir "${OUT_DIR}/audio" \
+        ${PROMPT_CACHE:+--prompt-cache "$PROMPT_CACHE"} \
         -o "$OUT_IMG" \
         -v >> "$LOG_FILE"
 
@@ -195,11 +196,14 @@ cp config.yaml "$CONFIG_IP_OFF"
 # Disable IP-Adapter in the "OFF" config using sed (macOS/Linux compatible)
 sed -i.bak 's/enable: true/enable: false/g' "$CONFIG_IP_OFF" && rm -f "${CONFIG_IP_OFF}.bak"
 
+# ─── Prompt Cache ───
+CACHE_FILE="${OUTPUT_BASE}/prompts_cache.json"
+
 # 1. Run with IP-Adapter ON (IP-Adapter Plus ViT-H)
-run_story "1_ip_on" 4 "$MALE_PROMPT" "$SEED" "$CONFIG_IP_ON"
+run_story "1_ip_on" 4 "$MALE_PROMPT" "$SEED" "$CONFIG_IP_ON" "$CACHE_FILE"
 
 # 2. Run with IP-Adapter OFF 
-run_story "2_ip_off" 4 "$MALE_PROMPT" "$SEED" "$CONFIG_IP_OFF"
+run_story "2_ip_off" 4 "$MALE_PROMPT" "$SEED" "$CONFIG_IP_OFF" "$CACHE_FILE"
 
 # ═══════════════════════════════════════════════════════════════
 #  Cleanup

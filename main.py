@@ -102,6 +102,12 @@ Examples:
         default=None,
         help="Directory for TTS audio output (overrides config tts.output_dir)",
     )
+    parser.add_argument(
+        "--prompt-cache",
+        type=str,
+        default=None,
+        help="Path to JSON file to save/load generated prompts to eliminate LLM variance",
+    )
 
     return parser.parse_args()
 
@@ -181,6 +187,7 @@ def main():
         seed=args.seed,
         enable_audio=args.audio,
         audio_dir=args.audio_dir,
+        prompt_cache=args.prompt_cache,
     )
 
     log.info(f"\u2705 Comic saved to: {output['comic_path']}")

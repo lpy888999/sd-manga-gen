@@ -263,7 +263,6 @@ class SDGenerator:
         height: Optional[int] = None,
         seed: Optional[int] = None,
         ip_adapter_image: Optional[Image.Image] = None,
-        layouts: Optional[List[Dict[str, Any]]] = None,
     ) -> Image.Image:
         """
         Generate a single panel image.
@@ -367,7 +366,6 @@ class SDGenerator:
                 negative_prompt=pp.negative_prompt,
                 seed=panel_seed,
                 ip_adapter_image=ip_adapter_image,
-                layouts=getattr(pp, "layouts", []),
             )
             images.append(img)
 
