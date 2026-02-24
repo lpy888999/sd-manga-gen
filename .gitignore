@@ -42,3 +42,4 @@ tests/test.log
 *.log
 .env
 *.ipynb
+output/
