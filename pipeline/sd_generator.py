@@ -257,7 +257,15 @@ class SDGenerator:
                 logger.error("controlnet_aux missing! Cannot extract HED edges. Please run `pip install controlnet_aux`.")
                 return Image.new('RGB', image.size, 'black')
                 
-        return self._hed_detector(image)
+        # Extract edges using HED
+        hed_img = self._hed_detector(image)
+        
+        # controlnet_aux's HED resizes the image. We must restore the exact original size
+        # Because SDXL ControlNet expects control_image dimensions to precisely match the target
+        if hed_img.size != image.size:
+            hed_img = hed_img.resize(image.size, resample=Image.LANCZOS)
+            
+        return hed_img
 
     # ── Mode resolution ──────────────────────────────────────────────
     def _resolve_mode(self, ip_adapter_image: Optional[Image.Image]) -> str:
