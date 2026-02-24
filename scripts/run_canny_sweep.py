@@ -56,6 +56,9 @@ def main():
     logger.info(f"Loading base image: {input_path}")
     base_img = Image.open(input_path).convert("RGB")
     
+    images = []
+    labels = []
+
     # --- Edge Extractor 1: Canny (OpenCV) ---
     logger.info("Extracting Canny...")
     img_np = np.array(base_img)
