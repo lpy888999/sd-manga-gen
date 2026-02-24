@@ -17,7 +17,7 @@ The pipeline selects a mode automatically based on configuration:
 * **LoRA + IP-Adapter** (both enabled, ``two_stage.enabled: true``)
   → **Two-stage** generation:
   1. Stage 1 — pure LoRA Text2Img (no IP influence) for clean composition.
-  2. Stage 2 — ControlNet Canny Img2Img + low-scale IP-Adapter to nudge
+  2. Stage 2 — ControlNet Img2Img (Canny/HED) + low-scale IP-Adapter to nudge
      character identity toward the reference without breaking layout/pose.
 
   Set ``ip_adapter.two_stage.enabled: false`` to revert to old single-stage
@@ -96,7 +96,7 @@ class LoRAConfig:
 class SDGenerator:
     """
     Generate images using Stable Diffusion + LoRA, with optional two-stage
-    ControlNet Canny + IP-Adapter refinement.
+    ControlNet (Canny or HED) + IP-Adapter refinement.
 
     Parameters
     ----------
@@ -145,6 +145,7 @@ class SDGenerator:
         self._pipe = None        # lazy-loaded primary t2i pipeline
         self._cn_pipe = None     # lazy-loaded ControlNet i2i pipeline
         self._restorer = None    # lazy-loaded FaceRestorer
+        self._hed_detector = None # lazy-loaded HED detector
 
     # ── Factory from config dict ─────────────────────────────────────
     @classmethod
@@ -237,6 +238,26 @@ class SDGenerator:
             gray = image.convert("L")
             edges = gray.filter(ImageFilter.FIND_EDGES)
             return edges.convert("RGB")
+
+    def _extract_hed(self, image: Image.Image) -> Image.Image:
+        """
+        Extract HED edges from *image* using controlnet_aux.
+        """
+        if self._hed_detector is None:
+            try:
+                from controlnet_aux import HEDdetector
+                import torch
+                logger.info("Loading HED detector...")
+                self._hed_detector = HEDdetector.from_pretrained("lllyasviel/Annotators")
+                
+                device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+                if hasattr(self._hed_detector, "to"):
+                    self._hed_detector.to(device)
+            except ImportError:
+                logger.error("controlnet_aux missing! Cannot extract HED edges. Please run `pip install controlnet_aux`.")
+                return Image.new('RGB', image.size, 'black')
+                
+        return self._hed_detector(image)
 
     # ── Mode resolution ──────────────────────────────────────────────
     def _resolve_mode(self, ip_adapter_image: Optional[Image.Image]) -> str:
@@ -364,7 +385,7 @@ class SDGenerator:
     # ── ControlNet pipeline (lazy, reuses primary weights) ──────────
     def _load_controlnet_pipeline(self, device: str, dtype: Any):
         """
-        Lazy-load the ControlNet Canny + IP-Adapter Img2Img pipeline.
+        Lazy-load the ControlNet (Canny/HED) + IP-Adapter Img2Img pipeline.
 
         Reuses UNet, VAE, tokenizers, and text encoders from ``self._pipe``
         to avoid doubling VRAM usage.
@@ -481,7 +502,7 @@ class SDGenerator:
         # ────────────────────────────────────────────────────────────
         #  Mode: TWO-STAGE
         #  Stage 1 → LoRA Text2Img (clean composition, no IP influence)
-        #  Stage 2 → ControlNet Canny Img2Img + low IP-Adapter scale
+        #  Stage 2 → ControlNet Img2Img + low IP-Adapter scale
         # ────────────────────────────────────────────────────────────
         if mode == "two_stage":
             ts = self._two_stage_cfg
@@ -498,13 +519,18 @@ class SDGenerator:
             stage1_img = self._pipe(**stage1_kwargs).images[0]
             logger.info("Stage 1 complete.")
 
-            # ── Extract Canny edges ─────────────────────────────────
-            canny_low  = ts.get("canny_low_threshold",  50)
-            canny_high = ts.get("canny_high_threshold", 150)
-            canny_img = self._make_canny(stage1_img, canny_low, canny_high)
-            logger.info(f"Canny edges extracted (low={canny_low}, high={canny_high}).")
+            # ── Extract edges based on configuration ────────────────
+            edge_detector = ts.get("edge_detector", "canny").lower()
+            if edge_detector == "hed":
+                control_img = self._extract_hed(stage1_img)
+                logger.info("HED edges extracted.")
+            else:
+                canny_low  = ts.get("canny_low_threshold",  50)
+                canny_high = ts.get("canny_high_threshold", 150)
+                control_img = self._make_canny(stage1_img, canny_low, canny_high)
+                logger.info(f"Canny edges extracted (low={canny_low}, high={canny_high}).")
 
-            # ── STAGE 2: ControlNet Canny i2i + low IP-Adapter ─────
+            # ── STAGE 2: ControlNet Img2Img + low IP-Adapter ────────
             self._load_controlnet_pipeline(device, dtype)
 
             strength       = ts.get("stage2_strength",  0.45)
@@ -512,7 +538,7 @@ class SDGenerator:
             cn_scale       = ts.get("controlnet_scale", 0.6)
 
             logger.info(
-                f"Stage 2 — ControlNet Canny Img2Img "
+                f"Stage 2 — ControlNet Img2Img "
                 f"(strength={strength}, ip_scale={ip_scale_s2}, cn_scale={cn_scale})"
             )
             self._cn_pipe.set_ip_adapter_scale(ip_scale_s2)
@@ -528,7 +554,7 @@ class SDGenerator:
                 prompt=prompt,
                 negative_prompt=negative_prompt or None,
                 image=stage1_img,
-                control_image=canny_img,
+                control_image=control_img,
                 ip_adapter_image=ip_adapter_image,
                 strength=strength,
                 guidance_scale=self.guidance_scale,

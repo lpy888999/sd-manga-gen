@@ -55,6 +55,9 @@ sd:
     two_stage:
       enabled: true
 
+      # Edge detector used for Stage 2 geometry guidance. choices: ["canny", "hed"]
+      edge_detector: "hed"
+
       # Img2Img denoising strength for Stage 2. (Recommended: 0.35 - 0.50)
       stage2_strength: 0.45
 
