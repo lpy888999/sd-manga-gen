@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import torch
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 CASCADE_PATH = Path("/vol/bitbucket/jl10525/lbpcascade_animeface.xml")
@@ -128,24 +128,16 @@ class FaceRestorer:
             logger.info(f"  Restoring face {i+1}/{len(boxes)} (Crop: {crop_w}x{crop_h} -> Input: {new_w}x{new_h})")
             # Turn OFF IP-Adapter for the face restoration so it can draw a clean anime face
             # without the reference image corrupting it again.
-            old_ip_scale = getattr(i2i_pipe, "ip_adapter_scale", None)
+            enc_type = ""
+            if hasattr(i2i_pipe, "unet") and hasattr(i2i_pipe.unet, "config"):
+                # Use str() and or "" to safely handle None returned by FrozenDict.get
+                enc_type = str(dict(i2i_pipe.unet.config).get("encoder_hid_dim_type", "") or "")
             
-            # Even if scale is 0.0, diffusers IP-Adapter implementation requires `ip_adapter_image`
-            # to be passed if the weights are loaded. We pass a dummy image if none was provided.
             safe_ip_image = ip_adapter_image
-            unet_config = getattr(i2i_pipe, "unet", {}).config if hasattr(getattr(i2i_pipe, "unet", None), "config") else {}
-            enc_type = str(unet_config.get("encoder_hid_dim_type", ""))
-            
-            if safe_ip_image is None and ("ip_adapter" in enc_type):
-                # Just in case passing None crashes
-                safe_ip_image = Image.new("RGB", (224, 224), (255, 255, 255))
-            
-            # Actually, `pipe_components` might carry over IP-Adapter. Let's just set scale to 0.0
-            if getattr(i2i_pipe, "unet", None) is not None:
-                if "ip_image_proj" in enc_type:
-                    i2i_pipe.set_ip_adapter_scale(0.0)
-                    if safe_ip_image is None:
-                        safe_ip_image = Image.new("RGB", (224, 224), (255, 255, 255))
+            if "ip_image_proj" in enc_type:
+                i2i_pipe.set_ip_adapter_scale(0.0)
+                if safe_ip_image is None:
+                    safe_ip_image = Image.new("RGB", (224, 224), (255, 255, 255))
             
             # Run localized img2img
             # We use a lower strength (e.g. 0.3 - 0.5) to keep the original pose and lighting,
@@ -162,17 +154,10 @@ class FaceRestorer:
                 }
                 
                 # Only pass ip_adapter_image if the pipeline expects it
-                if getattr(i2i_pipe, "unet", None) and "ip_image_proj" in i2i_pipe.unet.config.get("encoder_hid_dim_type", ""):
+                if "ip_image_proj" in enc_type:
                     call_args["ip_adapter_image"] = safe_ip_image
                     
                 restored_face = i2i_pipe(**call_args).images[0]
-                
-            # Restore IP scale if it existed
-            if old_ip_scale is not None:
-                if isinstance(old_ip_scale, list):
-                    pipe.set_ip_adapter_scale(old_ip_scale[0])
-                else:
-                    pipe.set_ip_adapter_scale(old_ip_scale)
 
             # Resize the restored high-res face back to the original crop size map
             restored_face_resized = restored_face.resize((crop_w, crop_h), Image.LANCZOS)
@@ -180,7 +165,6 @@ class FaceRestorer:
             # Smooth blending (feathering)
             # Create a simple gaussian mask centered on the bounding box
             mask = Image.new("L", (crop_w, crop_h), 0)
-            import ImageDraw
             draw = ImageDraw.Draw(mask)
             # Draw a white ellipse in the middle (the actual face) leaving the padded area soft
             ellipse_pad_x = pad_x * 0.5
@@ -188,11 +172,14 @@ class FaceRestorer:
             draw.ellipse([ellipse_pad_x, ellipse_pad_y, crop_w - ellipse_pad_x, crop_h - ellipse_pad_y], fill=255)
             
             # Blur the mask heavily for a seamless blend
-            from PIL import ImageFilter
             mask = mask.filter(ImageFilter.GaussianBlur(radius=min(pad_x, pad_y) * 0.5))
             
             # Paste it back
             result_img.paste(restored_face_resized, (x1, y1), mask)
+            
+        # Clean up temporary img2img pipeline to prevent memory leaks
+        del i2i_pipe
+        torch.cuda.empty_cache()
             
         logger.info("Stage 3: Face Restoration complete.")
         return result_img
