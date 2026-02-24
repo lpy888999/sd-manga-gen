@@ -38,8 +38,11 @@ export TMPDIR="/vol/bitbucket/jl10525/tmp"
 export XDG_CACHE_HOME="/vol/bitbucket/jl10525/xdg_cache"
 export COQUI_TOS_AGREED=1
 
-echo "== Checking opencv-python =="
-python -c "import cv2" 2>/dev/null || pip install opencv-python-headless --no-cache-dir --quiet && echo "   cv2 ready"
+echo "== Checking Face Restoration Cascade =="
+CASCADE_PATH="/vol/bitbucket/jl10525/lbpcascade_animeface.xml"
+if [ ! -f "$CASCADE_PATH" ]; then
+    wget -q https://raw.githubusercontent.com/nagadomi/lbpcascade_animeface/master/lbpcascade_animeface.xml -O "$CASCADE_PATH"
+fi
 
 echo "== Starting Parameter Matrix Execution =="
 
@@ -49,6 +52,6 @@ python scripts/run_param_sweep.py
 echo ""
 echo "═══════════════════════════════════════════════════"
 echo "  Sweep complete!"
-echo "  Check output/sweep/parameter_sweep_matrix.jpg"
+echo "  Check output/sweep/parameter_sweep_matrix_with_restoration.jpg"
 echo "═══════════════════════════════════════════════════"
 date
