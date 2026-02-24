@@ -91,13 +91,13 @@ def main():
     logger.info("✅ Stage 1 and Canny debug images saved to output/sweep/")
 
     # ─── 4. Define the parameter grid to sweep ───
-    # X-axis: ControlNet Scale (structural constraint)
-    cn_scales = [0.25, 0.35, 0.45] 
+    # X-axis: IP-Adapter Scale (identity constraint)
+    ip_scales = [0.35, 0.45, 0.55] 
     # Y-axis: Stage 2 Strength (denoising / freedom)
     stage2_strengths = [0.35, 0.45, 0.55]
-    fixed_ip_scale = 0.50
+    fixed_cn_scale = 0.35
     
-    logger.info(f"Starting sweep: {len(cn_scales)} CN scales × {len(stage2_strengths)} Strengths = {len(cn_scales) * len(stage2_strengths)} panels")
+    logger.info(f"Starting sweep: {len(ip_scales)} IP scales × {len(stage2_strengths)} Strengths = {len(ip_scales) * len(stage2_strengths)} panels")
 
     images = []
     labels = []
@@ -105,13 +105,13 @@ def main():
     count = 1
     # Iterate dynamically
     for strength in stage2_strengths:      # Rows
-        for cn_scale in cn_scales:         # Cols
-            logger.info(f"--- Panel {count} | CN: {cn_scale} | Strength: {strength} ---")
+        for ip_scale in ip_scales:         # Cols
+            logger.info(f"--- Panel {count} | IP: {ip_scale} | Strength: {strength} ---")
             
             # Hot-swap the two-stage configuration dynamically
-            sd._two_stage_cfg["controlnet_scale"] = cn_scale
+            sd._two_stage_cfg["controlnet_scale"] = fixed_cn_scale
             sd._two_stage_cfg["stage2_strength"] = strength
-            sd._two_stage_cfg["stage2_ip_scale"] = fixed_ip_scale
+            sd._two_stage_cfg["stage2_ip_scale"] = ip_scale
             
             # Generate exactly one panel
             img = sd.generate_panel(
@@ -124,12 +124,12 @@ def main():
             )
             
             images.append(img)
-            labels.append(f"CN: {cn_scale} | Str: {strength}")
+            labels.append(f"IP: {ip_scale} | Str: {strength}")
             count += 1
 
     # 5. Stitch and save
     logger.info("Stitching matrix image...")
-    grid = make_grid(images, labels, cols=len(cn_scales), rows=len(stage2_strengths))
+    grid = make_grid(images, labels, cols=len(ip_scales), rows=len(stage2_strengths))
     
     out_file = output_dir / "parameter_sweep_matrix.jpg"
     grid.save(out_file, quality=90)
