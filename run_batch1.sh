@@ -66,12 +66,12 @@ echo "== Standardizing ML dependencies (transformers, peft, diffusers) and TTS (
 echo "== Downloading IP-Adapter Plus Models =="
 hf download h94/IP-Adapter sdxl_models/ip-adapter-plus-face_sdxl_vit-h.bin \
     --local-dir "/vol/bitbucket/jl10525/hf_cache/ip-adapter" \
-    --local-dir-use-symlinks False --quiet
+    --quiet
 
 echo "== Downloading ControlNet Canny SDXL (for two-stage generation) =="
 hf download diffusers/controlnet-canny-sdxl-1.0 \
     --local-dir "/vol/bitbucket/jl10525/hf_cache/controlnet-canny-sdxl" \
-    --local-dir-use-symlinks False --quiet
+    --quiet
 
 # Ensure opencv-python is available for Canny edge extraction
 echo "== Checking opencv-python =="
