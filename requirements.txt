@@ -12,6 +12,8 @@ insightface>=0.7.3
 onnxruntime-gpu>=1.16.3
 opencv-python-headless>=4.8.0
 numpy<2.0.0
+controlnet_aux
+pydantic<2.0.0
 
 # LLM (Ollama OpenAI-compatible client)
 openai>=1.6.0
