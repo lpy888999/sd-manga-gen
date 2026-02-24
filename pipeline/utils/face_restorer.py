@@ -62,7 +62,7 @@ class FaceRestorer:
                 
         return boxes
 
-    def restore(self, image: Image.Image, pipe, prompt: str, negative_prompt: str) -> Image.Image:
+    def restore(self, image: Image.Image, pipe, prompt: str, negative_prompt: str, ip_adapter_image: Image.Image = None) -> Image.Image:
         """
         Detects faces in the PIL image, crops them, runs them through a localized
         img2img pass using the provided pipeline, and seamlessly blends them back.
@@ -79,9 +79,11 @@ class FaceRestorer:
             
         logger.info(f"Stage 3: Found {len(boxes)} face(s) for restoration.")
         
-        # We need a standard img2img pipeline, not the controlnet one, 
-        # so we extract the necessary components from the provided pipeline
-        # (Assuming the caller passes sd._pipe which is a StableDiffusionXLPipeline)
+        # We need an Img2Img pipeline. We instantiate it dynamically from the T2I pipeline
+        # components to share VRAM seamlessly.
+        from diffusers import StableDiffusionXLImg2ImgPipeline
+        i2i_pipe = StableDiffusionXLImg2ImgPipeline(**pipe.components)
+        i2i_pipe.set_progress_bar_config(disable=True)
         
         result_img = image.copy()
         
@@ -127,22 +129,41 @@ class FaceRestorer:
             
             # Turn OFF IP-Adapter for the face restoration so it can draw a clean anime face
             # without the reference image corrupting it again.
-            old_ip_scale = getattr(pipe, "ip_adapter_scale", None)
-            pipe.set_ip_adapter_scale(0.0)
+            old_ip_scale = getattr(i2i_pipe, "ip_adapter_scale", None)
+            
+            # Even if scale is 0.0, diffusers IP-Adapter implementation requires `ip_adapter_image`
+            # to be passed if the weights are loaded. We pass a dummy image if none was provided.
+            safe_ip_image = ip_adapter_image
+            if safe_ip_image is None and ("ip_adapter" in getattr(i2i_pipe, "unet", {}).config.get("encoder_hid_dim_type", "")):
+                # Just in case passing None crashes
+                safe_ip_image = Image.new("RGB", (224, 224), (255, 255, 255))
+            
+            # Actually, `pipe_components` might carry over IP-Adapter. Let's just set scale to 0.0
+            if getattr(i2i_pipe, "unet", None) is not None:
+                if "ip_image_proj" in i2i_pipe.unet.config.get("encoder_hid_dim_type", ""):
+                    i2i_pipe.set_ip_adapter_scale(0.0)
+                    if safe_ip_image is None:
+                        safe_ip_image = Image.new("RGB", (224, 224), (255, 255, 255))
             
             # Run localized img2img
             # We use a lower strength (e.g. 0.3 - 0.5) to keep the original pose and lighting,
             # but completely redraw the messy pixels.
             with torch.no_grad():
-                restored_face = pipe(
-                    prompt=prompt,
-                    negative_prompt=negative_prompt,
-                    image=model_input_face,
-                    strength=self.strength,
-                    num_inference_steps=30, # Sufficient for low strength
-                    guidance_scale=5.0,
-                    output_type="pil"
-                ).images[0]
+                call_args = {
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt,
+                    "image": model_input_face,
+                    "strength": self.strength,
+                    "num_inference_steps": 30, # Sufficient for low strength
+                    "guidance_scale": 5.0,
+                    "output_type": "pil"
+                }
+                
+                # Only pass ip_adapter_image if the pipeline expects it
+                if getattr(i2i_pipe, "unet", None) and "ip_image_proj" in i2i_pipe.unet.config.get("encoder_hid_dim_type", ""):
+                    call_args["ip_adapter_image"] = safe_ip_image
+                    
+                restored_face = i2i_pipe(**call_args).images[0]
                 
             # Restore IP scale if it existed
             if old_ip_scale is not None:

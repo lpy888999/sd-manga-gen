@@ -545,7 +545,7 @@ class SDGenerator:
                     from .utils.face_restorer import FaceRestorer
                     self._restorer = FaceRestorer(self._face_restoration_cfg)
                 final_image = self._restorer.restore(
-                    final_image, self._pipe, prompt, negative_prompt
+                    final_image, self._pipe, prompt, negative_prompt, ip_adapter_image=ip_adapter_image
                 )
                 
             return final_image
@@ -567,7 +567,7 @@ class SDGenerator:
                     from .utils.face_restorer import FaceRestorer
                     self._restorer = FaceRestorer(self._face_restoration_cfg)
                 final_image = self._restorer.restore(
-                    final_image, self._pipe, prompt, negative_prompt
+                    final_image, self._pipe, prompt, negative_prompt, ip_adapter_image=ip_adapter_image
                 )
                 
             return final_image
