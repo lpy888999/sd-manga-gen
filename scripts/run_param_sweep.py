@@ -63,6 +63,8 @@ def main():
 
     # ─── 3. PRE-RUN: Capture Stage 1 and Canny for debug ───
     logger.info("Generating Stage 1 debug images...")
+    # Ensure pipeline is loaded (lazy-load)
+    sd._load_pipeline()
     # Temporarily force IP scale to 0 to get stable Stage 1
     sd._pipe.set_ip_adapter_scale(0.0)
     
