@@ -92,10 +92,10 @@ def main():
 
     # ─── 4. Define the parameter grid to sweep ───
     # X-axis: IP-Adapter Scale (identity constraint)
-    ip_scales = [0.35, 0.45, 0.55] 
+    ip_scales = [0.5, 0.6, 0.7, 0.8, 0.9, 1] 
     # Y-axis: Stage 2 Strength (denoising / freedom)
-    stage2_strengths = [0.35, 0.45, 0.55]
-    fixed_cn_scale = 0.35
+    stage2_strengths = [0.4, 0.6, 0.8]
+    fixed_cn_scale = 0.3
     
     logger.info(f"Starting sweep: {len(ip_scales)} IP scales × {len(stage2_strengths)} Strengths = {len(ip_scales) * len(stage2_strengths)} panels")
 

@@ -45,7 +45,7 @@ sd:
     faceid_lora_name: "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl_lora.safetensors"
 
     # Global scale (used in single-stage mode or Stage 2 override below)
-    scale: 0.3
+    scale: 0.7
 
     # ── Two-Stage Generation ──────────────────────────────────────────
     # Only activates when BOTH LoRA and IP-Adapter are enabled.
@@ -55,23 +55,22 @@ sd:
     two_stage:
       enabled: true
 
-      # Img2Img denoising strength for Stage 2.
-      # Lower = stays closer to Stage 1 layout. Range: 0.3–0.6
+      # Img2Img denoising strength for Stage 2. (Recommended: 0.35 - 0.50)
       stage2_strength: 0.45
 
-      # IP-Adapter scale used ONLY in Stage 2. Should be lower than `scale`
-      # to avoid overriding the LoRA-driven style/anatomy from Stage 1.
-      stage2_ip_scale: 0.35
+      # IP-Adapter scale used ONLY in Stage 2. (Recommended: 0.35 - 0.55)
+      stage2_ip_scale: 0.50
 
       # ControlNet model for Canny edge guidance
       controlnet_id: "/vol/bitbucket/jl10525/hf_cache/controlnet-canny-sdxl"
 
-      # How strongly the Canny edge map guides Stage 2 generation.
-      controlnet_scale: 0.6
+      # How strongly the Canny edge map guides Stage 2 generation. (Recommended: 0.25 - 0.45)
+      # Structural constraints (Canny) must be weaker than identity constraints (IP-Adapter)
+      controlnet_scale: 0.35
 
-      # Canny edge detection thresholds (lower → more edges)
-      canny_low_threshold: 50
-      canny_high_threshold: 150
+      # Canny edge detection thresholds
+      canny_low_threshold: 75
+      canny_high_threshold: 175
 
   # Generation parameters
   guidance_scale: 6.0
