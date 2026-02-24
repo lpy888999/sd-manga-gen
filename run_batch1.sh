@@ -97,15 +97,6 @@ if torch.cuda.is_available():
     print("device name:", torch.cuda.get_device_name(0))
 PYEOF
 
-# ─── 4. TTS Reference Audio ────────────────────────────────────
-# Generate reference WAVs for XTTS voice cloning (only if not already present)
-if [ ! -f "assets/tts_refs/narrator.wav" ]; then
-    echo "== Generating TTS reference audio =="
-    python scripts/fetch_tts_refs.py
-else
-    echo "== TTS reference audio already exists, skipping =="
-fi
-
 # ─── 5. Ollama Setup ───────────────────────────────────────────
 OLLAMA=/homes/jl10525/bin/ollama
 export OLLAMA_MODELS="/vol/bitbucket/jl10525/ollama_data"
