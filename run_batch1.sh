@@ -62,6 +62,7 @@ echo "   HF cache:  $HF_HOME"
 # Force-install stable, compatible versions for SDXL.
 echo "== Standardizing ML dependencies (transformers, peft, diffusers) and TTS (edge-tts) =="
 # pip install --upgrade "transformers==4.44.2" "peft==0.12.0" "diffusers==0.30.3" "pydantic<2.0" "edge-tts" "pydub" "insightface>=0.7.3" "onnxruntime-gpu>=1.16.3" --quiet
+pip install "numpy<2.0.0" --quiet
 
 echo "== Downloading IP-Adapter Plus Models =="
 hf download h94/IP-Adapter sdxl_models/ip-adapter-plus-face_sdxl_vit-h.bin \
