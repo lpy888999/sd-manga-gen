@@ -67,7 +67,7 @@ huggingface-cli download diffusers/controlnet-canny-sdxl-1.0 --local-dir models/
 
 # Ensure opencv-python is available for Canny edge extraction
 echo "== Checking opencv-python =="
-python -c "import cv2" 2>/dev/null || pip install opencv-python-headless --quiet && echo "   cv2 ready"
+python -c "import cv2" 2>/dev/null || pip install opencv-python-headless --no-cache-dir --quiet && echo "   cv2 ready"
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
     PROJECT_DIR="$SLURM_SUBMIT_DIR"
