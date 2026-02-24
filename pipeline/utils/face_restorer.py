@@ -14,7 +14,7 @@ class FaceRestorer:
     """
     Handles Stage 3 Anime Face Restoration.
     Uses `lbpcascade_animeface` to find bounding boxes, then uses a localized
-    SD/Img2Img inpainting or upscaler run to fix IP-Adapter distortions.
+    SD/Img2Img pass to fix IP-Adapter distortions.
     """
     def __init__(self, cfg: dict):
         self.cfg = cfg
@@ -37,15 +37,13 @@ class FaceRestorer:
             
         logger.info("Loading lbpcascade_animeface...")
         self.detector = cv2.CascadeClassifier(str(CASCADE_PATH))
-            
+
     def _get_face_boxes(self, img_np: np.ndarray):
-        """Returns a list of [xmin, ymin, xmax, ymax] for detected faces"""
-        if not self.detector:
+        """Returns a list of [xmin, ymin, xmax, ymax] for detected faces."""
+        if self.detector is None:
             return []
             
-        # OpenCV Cascade expects grayscale
         gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-        # Equalize histogram to improve contrast and detection rate
         gray = cv2.equalizeHist(gray)
         
         faces = self.detector.detectMultiScale(
@@ -57,15 +55,21 @@ class FaceRestorer:
         
         boxes = []
         for (x, y, w, h) in faces:
-            # Convert x, y, w, h -> xmin, ymin, xmax, ymax
             boxes.append([int(x), int(y), int(x + w), int(y + h)])
                 
         return boxes
 
-    def restore(self, image: Image.Image, pipe, prompt: str, negative_prompt: str, ip_adapter_image: Image.Image = None) -> Image.Image:
+    def restore(
+        self,
+        image: Image.Image,
+        pipe,
+        prompt: str,
+        negative_prompt: str,
+        ip_adapter_image: Image.Image = None
+    ) -> Image.Image:
         """
         Detects faces in the PIL image, crops them, runs them through a localized
-        img2img pass using the provided pipeline, and seamlessly blends them back.
+        img2img pass, and seamlessly blends them back.
         """
         if not self.enabled or self.detector is None:
             return image
@@ -79,16 +83,25 @@ class FaceRestorer:
             
         logger.info(f"Stage 3: Found {len(boxes)} face(s) for restoration.")
         
-        # We need an Img2Img pipeline. We instantiate it dynamically from the T2I pipeline
-        # components to share VRAM seamlessly.
         from diffusers import StableDiffusionXLImg2ImgPipeline
         i2i_pipe = StableDiffusionXLImg2ImgPipeline(**pipe.components)
         i2i_pipe.set_progress_bar_config(disable=True)
         
+        # Disable IP-Adapter influence for face restoration.
+        # If IP-Adapter is not loaded this is a no-op.
+        try:
+            i2i_pipe.set_ip_adapter_scale(0.0)
+        except Exception:
+            pass
+
+        # Dummy image to satisfy diffusers' requirement that ip_adapter_image
+        # must always be passed when IP-Adapter weights are loaded in the UNet,
+        # even when scale=0.0.
+        dummy_ip_image = ip_adapter_image or Image.new("RGB", (224, 224), (255, 255, 255))
+        
         result_img = image.copy()
         
         for i, (xmin, ymin, xmax, ymax) in enumerate(boxes):
-            # Expand the bounding box slightly for context (padding)
             w, h = xmax - xmin, ymax - ymin
             pad_x = int(w * 0.3)
             pad_y = int(h * 0.3)
@@ -98,87 +111,49 @@ class FaceRestorer:
             x2 = min(image.width, xmax + pad_x)
             y2 = min(image.height, ymax + pad_y)
             
-            # Crop the face region
             face_crop = result_img.crop((x1, y1, x2, y2))
             crop_w, crop_h = face_crop.size
             
-            # SDXL needs dimensions to be multiples of 64
-            # We scale up the crop to at least 512x512 for SDXL to have enough resolution to "paint" a face
+            # Scale up to at least 512px on the longest side for SDXL,
+            # snapping to multiples of 64.
             target_size = 512
             resize_ratio = target_size / max(crop_w, crop_h)
             if resize_ratio > 1:
-                # Face is small, enlarge it for the model
-                new_w = int(crop_w * resize_ratio)
-                new_h = int(crop_h * resize_ratio)
-                # Force strictly multiple of 64
-                new_w = (new_w // 64) * 64
-                new_h = (new_h // 64) * 64
-                if new_w == 0: new_w = 64
-                if new_h == 0: new_h = 64
-                
-                model_input_face = face_crop.resize((new_w, new_h), Image.LANCZOS)
+                new_w = max(64, (int(crop_w * resize_ratio) // 64) * 64)
+                new_h = max(64, (int(crop_h * resize_ratio) // 64) * 64)
             else:
-                # Face is already large enough, just snap to 64
-                new_w = (crop_w // 64) * 64
-                new_h = (crop_h // 64) * 64
-                if new_w == 0: new_w = 64
-                if new_h == 0: new_h = 64
-                model_input_face = face_crop.resize((new_w, new_h), Image.LANCZOS)
+                new_w = max(64, (crop_w // 64) * 64)
+                new_h = max(64, (crop_h // 64) * 64)
                 
+            model_input_face = face_crop.resize((new_w, new_h), Image.LANCZOS)
             logger.info(f"  Restoring face {i+1}/{len(boxes)} (Crop: {crop_w}x{crop_h} -> Input: {new_w}x{new_h})")
-            # Turn OFF IP-Adapter for the face restoration pass so it can redraw a clean 
-            # anime face without the reference image "identity blur" affecting it.
-            enc_type = ""
-            if hasattr(i2i_pipe, "unet") and hasattr(i2i_pipe.unet, "config"):
-                # FrozenDict.get(..., "") returns None if key is present but value is None
-                enc_type = str(dict(i2i_pipe.unet.config).get("encoder_hid_dim_type", "") or "")
-            
-            # If the UNet has IP-Adapter layers, diffusers REQUIRES ip_adapter_image to be passed
-            # in call_args, even if set_ip_adapter_scale is 0.0.
-            safe_ip_image = None
-            if "ip_image_proj" in enc_type:
-                i2i_pipe.set_ip_adapter_scale(0.0)
-                safe_ip_image = ip_adapter_image or Image.new("RGB", (224, 224), (255, 255, 255))
-            
-            # Run localized img2img
-            # We use a lower strength (e.g. 0.3 - 0.5) to keep the original pose and lighting,
-            # but completely redraw the messy pixels.
-            with torch.no_grad():
-                call_args = {
-                    "prompt": prompt,
-                    "negative_prompt": negative_prompt,
-                    "image": model_input_face,
-                    "strength": self.strength,
-                    "num_inference_steps": 30, # Sufficient for low strength
-                    "guidance_scale": 5.0,
-                    "output_type": "pil"
-                }
-                
-                # Only pass ip_adapter_image if the pipeline expects it
-                if safe_ip_image is not None:
-                    call_args["ip_adapter_image"] = safe_ip_image
-                    
-                restored_face = i2i_pipe(**call_args).images[0]
 
-            # Resize the restored high-res face back to the original crop size map
+            with torch.no_grad():
+                restored_face = i2i_pipe(
+                    prompt=prompt,
+                    negative_prompt=negative_prompt,
+                    image=model_input_face,
+                    strength=self.strength,
+                    num_inference_steps=30,
+                    guidance_scale=5.0,
+                    output_type="pil",
+                    ip_adapter_image=dummy_ip_image,  # always passed
+                ).images[0]
+
+            # Resize restored face back to original crop dimensions
             restored_face_resized = restored_face.resize((crop_w, crop_h), Image.LANCZOS)
             
-            # Smooth blending (feathering)
-            # Create a simple gaussian mask centered on the bounding box
+            # Build a feathered ellipse mask for seamless blending
             mask = Image.new("L", (crop_w, crop_h), 0)
             draw = ImageDraw.Draw(mask)
-            # Draw a white ellipse in the middle (the actual face) leaving the padded area soft
-            ellipse_pad_x = pad_x * 0.5
-            ellipse_pad_y = pad_y * 0.5
-            draw.ellipse([ellipse_pad_x, ellipse_pad_y, crop_w - ellipse_pad_x, crop_h - ellipse_pad_y], fill=255)
-            
-            # Blur the mask heavily for a seamless blend
+            draw.ellipse(
+                [pad_x * 0.5, pad_y * 0.5, crop_w - pad_x * 0.5, crop_h - pad_y * 0.5],
+                fill=255
+            )
             mask = mask.filter(ImageFilter.GaussianBlur(radius=min(pad_x, pad_y) * 0.5))
             
-            # Paste it back
             result_img.paste(restored_face_resized, (x1, y1), mask)
             
-        # Clean up temporary img2img pipeline to prevent memory leaks
         del i2i_pipe
         torch.cuda.empty_cache()
             
