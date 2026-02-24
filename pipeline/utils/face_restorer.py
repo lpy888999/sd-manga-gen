@@ -126,7 +126,6 @@ class FaceRestorer:
                 model_input_face = face_crop.resize((new_w, new_h), Image.LANCZOS)
                 
             logger.info(f"  Restoring face {i+1}/{len(boxes)} (Crop: {crop_w}x{crop_h} -> Input: {new_w}x{new_h})")
-            
             # Turn OFF IP-Adapter for the face restoration so it can draw a clean anime face
             # without the reference image corrupting it again.
             old_ip_scale = getattr(i2i_pipe, "ip_adapter_scale", None)
@@ -134,13 +133,16 @@ class FaceRestorer:
             # Even if scale is 0.0, diffusers IP-Adapter implementation requires `ip_adapter_image`
             # to be passed if the weights are loaded. We pass a dummy image if none was provided.
             safe_ip_image = ip_adapter_image
-            if safe_ip_image is None and ("ip_adapter" in getattr(i2i_pipe, "unet", {}).config.get("encoder_hid_dim_type", "")):
+            unet_config = getattr(i2i_pipe, "unet", {}).config if hasattr(getattr(i2i_pipe, "unet", None), "config") else {}
+            enc_type = str(unet_config.get("encoder_hid_dim_type", ""))
+            
+            if safe_ip_image is None and ("ip_adapter" in enc_type):
                 # Just in case passing None crashes
                 safe_ip_image = Image.new("RGB", (224, 224), (255, 255, 255))
             
             # Actually, `pipe_components` might carry over IP-Adapter. Let's just set scale to 0.0
             if getattr(i2i_pipe, "unet", None) is not None:
-                if "ip_image_proj" in i2i_pipe.unet.config.get("encoder_hid_dim_type", ""):
+                if "ip_image_proj" in enc_type:
                     i2i_pipe.set_ip_adapter_scale(0.0)
                     if safe_ip_image is None:
                         safe_ip_image = Image.new("RGB", (224, 224), (255, 255, 255))
