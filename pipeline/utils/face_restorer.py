@@ -126,18 +126,19 @@ class FaceRestorer:
                 model_input_face = face_crop.resize((new_w, new_h), Image.LANCZOS)
                 
             logger.info(f"  Restoring face {i+1}/{len(boxes)} (Crop: {crop_w}x{crop_h} -> Input: {new_w}x{new_h})")
-            # Turn OFF IP-Adapter for the face restoration so it can draw a clean anime face
-            # without the reference image corrupting it again.
+            # Turn OFF IP-Adapter for the face restoration pass so it can redraw a clean 
+            # anime face without the reference image "identity blur" affecting it.
             enc_type = ""
             if hasattr(i2i_pipe, "unet") and hasattr(i2i_pipe.unet, "config"):
-                # Use str() and or "" to safely handle None returned by FrozenDict.get
+                # FrozenDict.get(..., "") returns None if key is present but value is None
                 enc_type = str(dict(i2i_pipe.unet.config).get("encoder_hid_dim_type", "") or "")
             
-            safe_ip_image = ip_adapter_image
+            # If the UNet has IP-Adapter layers, diffusers REQUIRES ip_adapter_image to be passed
+            # in call_args, even if set_ip_adapter_scale is 0.0.
+            safe_ip_image = None
             if "ip_image_proj" in enc_type:
                 i2i_pipe.set_ip_adapter_scale(0.0)
-                if safe_ip_image is None:
-                    safe_ip_image = Image.new("RGB", (224, 224), (255, 255, 255))
+                safe_ip_image = ip_adapter_image or Image.new("RGB", (224, 224), (255, 255, 255))
             
             # Run localized img2img
             # We use a lower strength (e.g. 0.3 - 0.5) to keep the original pose and lighting,
@@ -154,7 +155,7 @@ class FaceRestorer:
                 }
                 
                 # Only pass ip_adapter_image if the pipeline expects it
-                if "ip_image_proj" in enc_type:
+                if safe_ip_image is not None:
                     call_args["ip_adapter_image"] = safe_ip_image
                     
                 restored_face = i2i_pipe(**call_args).images[0]
