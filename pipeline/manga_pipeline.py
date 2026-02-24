@@ -255,7 +255,7 @@ class MangaPipeline:
 
         # ── Step 3: Image generation ─────────────────────────────────
         logger.info("=" * 60)
-        logger.info("STEP 3 · Image Generation (SD + LoRA + IP-Adapter)")
+        logger.info("STEP 3 · Image Generation (SD + LoRA + IP-Adapter / Two-Stage)")
         logger.info("=" * 60)
         if seed is not None:
             self.sd_generator.seed = seed

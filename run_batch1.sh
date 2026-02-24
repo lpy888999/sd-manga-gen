@@ -62,6 +62,13 @@ echo "== Standardizing ML dependencies (transformers, peft, diffusers) and TTS (
 echo "== Downloading IP-Adapter Plus Models =="
 huggingface-cli download h94/IP-Adapter sdxl_models/ip-adapter-plus-face_sdxl_vit-h.bin --local-dir models/ip-adapter --quiet
 
+echo "== Downloading ControlNet Canny SDXL (for two-stage generation) =="
+huggingface-cli download diffusers/controlnet-canny-sdxl-1.0 --local-dir models/controlnet-canny-sdxl --quiet
+
+# Ensure opencv-python is available for Canny edge extraction
+echo "== Checking opencv-python =="
+python -c "import cv2" 2>/dev/null || pip install opencv-python-headless --quiet && echo "   cv2 ready"
+
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
     PROJECT_DIR="$SLURM_SUBMIT_DIR"
 else

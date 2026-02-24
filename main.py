@@ -185,7 +185,7 @@ def main():
         panel_count=args.panels,
         output_path=args.output,
         seed=args.seed,
-        enable_audio=args.audio,
+        enable_audio=args.audio if args.audio else None,
         audio_dir=args.audio_dir,
         prompt_cache=args.prompt_cache,
     )

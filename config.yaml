@@ -33,19 +33,45 @@ sd:
   ip_adapter:
     enable: true
     # "base" for standard IP-Adapter, "faceid_plus_v2" for IP-Adapter FaceID Plus V2
-    type: "base" 
-    
+    type: "base"
+
     # Settings for type: "base"
     model_id: "h94/IP-Adapter"
     subfolder: "sdxl_models"
     weight_name: "ip-adapter-plus-face_sdxl_vit-h.bin"
-    
+
     # Settings for type: "faceid_plus_v2"
     faceid_model_id: "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl.bin"
     faceid_lora_name: "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl_lora.safetensors"
-    
-    # Global scale 
-    scale: 0.7
+
+    # Global scale (used in single-stage mode or Stage 2 override below)
+    scale: 0.6
+
+    # ── Two-Stage Generation ──────────────────────────────────────────
+    # Only activates when BOTH LoRA and IP-Adapter are enabled.
+    # Stage 1: pure LoRA Text2Img for clean composition/layout
+    # Stage 2: ControlNet Canny Img2Img + low IP-Adapter to pull character
+    #          features toward the reference image without breaking the pose.
+    two_stage:
+      enabled: true
+
+      # Img2Img denoising strength for Stage 2.
+      # Lower = stays closer to Stage 1 layout. Range: 0.3–0.6
+      stage2_strength: 0.45
+
+      # IP-Adapter scale used ONLY in Stage 2. Should be lower than `scale`
+      # to avoid overriding the LoRA-driven style/anatomy from Stage 1.
+      stage2_ip_scale: 0.35
+
+      # ControlNet model for Canny edge guidance
+      controlnet_id: "diffusers/controlnet-canny-sdxl-1.0"
+
+      # How strongly the Canny edge map guides Stage 2 generation.
+      controlnet_scale: 0.6
+
+      # Canny edge detection thresholds (lower → more edges)
+      canny_low_threshold: 50
+      canny_high_threshold: 150
 
   # Generation parameters
   guidance_scale: 6.0
@@ -70,7 +96,7 @@ layout:
 # --- Prompt Engineering ---
 prompt:
   # Concise quality tags to save CLIP token space (SDXL has a 77 token limit)
-  quality_suffix: "masterpiece, comic_style"
+  quality_suffix: "masterpiece"
   # Negative prompt shared across all panels
   negative_prompt: "low quality, blurry, distorted face, extra fingers, bad anatomy, watermark, text, signature"
 
