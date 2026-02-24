@@ -61,13 +61,17 @@ echo "   HF cache:  $HF_HOME"
 # The server has an unusual transformers 5.1.0 which breaks peft/diffusers.
 # Force-install stable, compatible versions for SDXL.
 echo "== Standardizing ML dependencies (transformers, peft, diffusers) and TTS (edge-tts) =="
-pip install setuptools wheel --quiet
 pip install "numpy<2.0.0" "pydantic<2.0.0" --quiet
 
 echo "== Downloading IP-Adapter Plus Models =="
 hf download h94/IP-Adapter sdxl_models/ip-adapter-plus-face_sdxl_vit-h.bin \
     --local-dir "/vol/bitbucket/jl10525/hf_cache/ip-adapter" \
     --quiet
+echo "== Downloading Face Restoration Cascade =="
+CASCADE_PATH="/vol/bitbucket/jl10525/lbpcascade_animeface.xml"
+if [ ! -f "$CASCADE_PATH" ]; then
+    wget -q https://raw.githubusercontent.com/nagadomi/lbpcascade_animeface/master/lbpcascade_animeface.xml -O "$CASCADE_PATH"
+fi
 
 echo "== Downloading ControlNet Canny SDXL (for two-stage generation) =="
 hf download diffusers/controlnet-canny-sdxl-1.0 \

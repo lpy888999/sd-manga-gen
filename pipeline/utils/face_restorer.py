@@ -2,14 +2,18 @@ import logging
 import cv2
 import numpy as np
 import torch
+from pathlib import Path
 from PIL import Image
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+CASCADE_PATH = Path("/vol/bitbucket/jl10525/lbpcascade_animeface.xml")
 
 logger = logging.getLogger("face-restorer")
 
 class FaceRestorer:
     """
     Handles Stage 3 Anime Face Restoration.
-    Uses `anime-face-detector` to find bounding boxes, then uses a localized
+    Uses `lbpcascade_animeface` to find bounding boxes, then uses a localized
     SD/Img2Img inpainting or upscaler run to fix IP-Adapter distortions.
     """
     def __init__(self, cfg: dict):
@@ -25,34 +29,36 @@ class FaceRestorer:
         if not self.enabled:
             return
             
-        try:
-            from anime_face_detector import create_detector
-            # create_detector will automatically download weights from HF if missing
-            logger.info("Loading anime-face-detector...")
-            # We use yolov3 for fast, reliable anime face detection
-            self.detector = create_detector('yolov3') 
-        except ImportError:
-            logger.error("anime-face-detector is not installed! Face restoration will be skipped.")
-            logger.error("Please run: pip install anime-face-detector")
+        if not CASCADE_PATH.exists():
+            logger.error(f"Cascade xml not found at {CASCADE_PATH}!")
+            logger.error("Please ensure you downloaded lbpcascade_animeface.xml")
             self.enabled = False
+            return
+            
+        logger.info("Loading lbpcascade_animeface...")
+        self.detector = cv2.CascadeClassifier(str(CASCADE_PATH))
             
     def _get_face_boxes(self, img_np: np.ndarray):
         """Returns a list of [xmin, ymin, xmax, ymax] for detected faces"""
         if not self.detector:
             return []
             
-        # anime_face_detector expects BGR numpy array
-        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-        preds = self.detector(img_bgr)
+        # OpenCV Cascade expects grayscale
+        gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+        # Equalize histogram to improve contrast and detection rate
+        gray = cv2.equalizeHist(gray)
+        
+        faces = self.detector.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(24, 24)
+        )
         
         boxes = []
-        for pred in preds:
-            # pred is a dict with 'bbox' and 'keypoints'
-            bbox = pred['bbox']
-            # bbox is [xmin, ymin, xmax, ymax, confidence]
-            confidence = bbox[4]
-            if confidence > 0.5: # Hardcoded threshold to avoid false positives
-                boxes.append([int(x) for x in bbox[:4]])
+        for (x, y, w, h) in faces:
+            # Convert x, y, w, h -> xmin, ymin, xmax, ymax
+            boxes.append([int(x), int(y), int(x + w), int(y + h)])
                 
         return boxes
 

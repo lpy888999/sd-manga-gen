@@ -14,7 +14,7 @@ opencv-python-headless>=4.8.0
 numpy<2.0.0
 controlnet_aux
 pydantic<2.0.0
-anime-face-detector
+
 
 # LLM (Ollama OpenAI-compatible client)
 openai>=1.6.0

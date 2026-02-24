@@ -113,8 +113,11 @@ def main():
             sd._two_stage_cfg["stage2_strength"] = strength
             sd._two_stage_cfg["stage2_ip_scale"] = ip_scale
             
-            # Generate exactly one panel
-            img = sd.generate_panel(
+            # Disable automatic stage 3 so we can get the RAW image first
+            sd._face_restoration_cfg["enabled"] = False
+            
+            # Generate exactly one panel (unrestored)
+            raw_img = sd.generate_panel(
                 prompt=prompt,
                 negative_prompt=neg_prompt,
                 width=1024,
@@ -123,15 +126,33 @@ def main():
                 ip_adapter_image=ref_img
             )
             
-            images.append(img)
-            labels.append(f"IP: {ip_scale} | Str: {strength}")
+            images.append(raw_img)
+            labels.append(f"RAW (IP: {ip_scale} | Str: {strength})")
+            
+            # Now manually apply face restoration for comparison
+            logger.info("  Applying Face Restoration for comparison...")
+            if sd._restorer is None:
+                from pipeline.utils.face_restorer import FaceRestorer
+                # Ensure it's enabled for the manual pass
+                temp_cfg = sd._face_restoration_cfg.copy()
+                temp_cfg["enabled"] = True
+                sd._restorer = FaceRestorer(temp_cfg)
+            
+            restored_img = sd._restorer.restore(
+                raw_img.copy(), sd._pipe, prompt, neg_prompt
+            )
+            
+            images.append(restored_img)
+            labels.append(f"RESTORED (IP: {ip_scale} | Str: {strength})")
+            
             count += 1
 
     # 5. Stitch and save
     logger.info("Stitching matrix image...")
-    grid = make_grid(images, labels, cols=len(ip_scales), rows=len(stage2_strengths))
+    # Cols is now doubled because we show RAW and RESTORED side-by-side
+    grid = make_grid(images, labels, cols=len(ip_scales) * 2, rows=len(stage2_strengths))
     
-    out_file = output_dir / "parameter_sweep_matrix.jpg"
+    out_file = output_dir / "parameter_sweep_matrix_with_restoration.jpg"
     grid.save(out_file, quality=90)
     logger.info(f"✅ Sweep complete! Matrix saved to: {out_file}")
 
