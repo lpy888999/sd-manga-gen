@@ -486,7 +486,13 @@ class SDGenerator:
             # ── STAGE 1: pure LoRA t2i ──────────────────────────────
             logger.info("Stage 1 — LoRA Text2Img (composition pass, IP scale=0.0)")
             self._pipe.set_ip_adapter_scale(0.0)
-            stage1_img = self._pipe(**base_kwargs).images[0]
+            
+            # Pass ip_adapter_image even if scale=0 to satisfy UNet conditioning
+            stage1_kwargs = base_kwargs.copy()
+            if getattr(self._pipe, "unet", None) and getattr(self._pipe.unet, "encoder_hid_proj", None) is not None:
+                stage1_kwargs["ip_adapter_image"] = ip_adapter_image
+                
+            stage1_img = self._pipe(**stage1_kwargs).images[0]
             logger.info("Stage 1 complete.")
 
             # ── Extract Canny edges ─────────────────────────────────
