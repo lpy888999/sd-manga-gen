@@ -74,7 +74,7 @@ def main():
         negative_prompt=neg_prompt,
         width=1024,
         height=768,
-        generator=torch.Generator(device=sd.device).manual_seed(seed),
+        generator=torch.Generator(device=sd._pipe.device).manual_seed(seed),
         ip_adapter_image=ref_img
     ).images[0]
     
