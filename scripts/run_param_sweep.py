@@ -52,12 +52,43 @@ def main():
         
     ref_img = Image.open(ref_path).convert("RGB")
     
-    # Prompt for testing
-    prompt = "A young man stands on a roof at night. There is a full moon glowing brightly behind him. A ninja in dark clothing jumps down towards him. He holds a sword."
+    # Updated pirate prompt for testing
+    prompt = "A young pirate with a straw hat and red vest stands on the deck of a wooden ship at night. A huge moon is in the background. High quality manga style."
     neg_prompt = config["prompt"].get("negative_prompt", "")
     seed = 42
     
-    # ─── 3. Define the parameter grid to sweep ───
+    # Make sure output directory exists
+    output_dir = PROJECT_ROOT / "output" / "sweep"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ─── 3. PRE-RUN: Capture Stage 1 and Canny for debug ───
+    logger.info("Generating Stage 1 debug images...")
+    # Temporarily force IP scale to 0 to get stable Stage 1
+    sd._pipe.set_ip_adapter_scale(0.0)
+    
+    # Need to pass ip_adapter_image even for scale 0 to avoid the unet crash
+    stage1_img = sd._pipe(
+        prompt=prompt,
+        negative_prompt=neg_prompt,
+        width=1024,
+        height=768,
+        generator=torch.Generator(device=sd.device).manual_seed(seed),
+        ip_adapter_image=ref_img
+    ).images[0]
+    
+    stage1_img.save(output_dir / "debug_stage1_composition.jpg")
+    
+    # Extract Canny
+    ts = sd._two_stage_cfg
+    canny_img = sd._make_canny(
+        stage1_img, 
+        ts.get("canny_low_threshold", 75), 
+        ts.get("canny_high_threshold", 175)
+    )
+    canny_img.save(output_dir / "debug_stage1_canny.jpg")
+    logger.info("✅ Stage 1 and Canny debug images saved to output/sweep/")
+
+    # ─── 4. Define the parameter grid to sweep ───
     # X-axis: ControlNet Scale (structural constraint)
     cn_scales = [0.25, 0.35, 0.45] 
     # Y-axis: Stage 2 Strength (denoising / freedom)
@@ -68,10 +99,6 @@ def main():
 
     images = []
     labels = []
-
-    # Make sure output directory exists
-    output_dir = PROJECT_ROOT / "output" / "sweep"
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     count = 1
     # Iterate dynamically
@@ -84,21 +111,21 @@ def main():
             sd._two_stage_cfg["stage2_strength"] = strength
             sd._two_stage_cfg["stage2_ip_scale"] = fixed_ip_scale
             
-            # Generate exactly one panel (skips LLM layout entirely)
+            # Generate exactly one panel
             img = sd.generate_panel(
                 prompt=prompt,
                 negative_prompt=neg_prompt,
                 width=1024,
                 height=768,
-                seed=seed, # fix seed so everything else is identical
+                seed=seed,
                 ip_adapter_image=ref_img
             )
             
             images.append(img)
-            labels.append(f"CN Scale: {cn_scale} | Denoise: {strength} | IP: {fixed_ip_scale}")
+            labels.append(f"CN: {cn_scale} | Str: {strength}")
             count += 1
 
-    # 4. Stitch and save
+    # 5. Stitch and save
     logger.info("Stitching matrix image...")
     grid = make_grid(images, labels, cols=len(cn_scales), rows=len(stage2_strengths))
     
