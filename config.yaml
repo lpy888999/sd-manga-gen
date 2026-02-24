@@ -45,7 +45,7 @@ sd:
     faceid_lora_name: "models/ip-adapter/ip-adapter-faceid-plusv2_sdxl_lora.safetensors"
 
     # Global scale (used in single-stage mode or Stage 2 override below)
-    scale: 0.6
+    scale: 0.3
 
     # ── Two-Stage Generation ──────────────────────────────────────────
     # Only activates when BOTH LoRA and IP-Adapter are enabled.
@@ -64,7 +64,7 @@ sd:
       stage2_ip_scale: 0.35
 
       # ControlNet model for Canny edge guidance
-      controlnet_id: "diffusers/controlnet-canny-sdxl-1.0"
+      controlnet_id: "/vol/bitbucket/jl10525/hf_cache/controlnet-canny-sdxl"
 
       # How strongly the Canny edge map guides Stage 2 generation.
       controlnet_scale: 0.6

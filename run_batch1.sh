@@ -50,8 +50,10 @@ export HF_HOME="/vol/bitbucket/jl10525/hf_cache"
 export HF_HUB_CACHE="/vol/bitbucket/jl10525/hf_cache/hub"
 export HF_ASSETS_CACHE="/vol/bitbucket/jl10525/hf_cache/assets"
 export PIP_CACHE_DIR="/vol/bitbucket/jl10525/pip_cache"
+export TMPDIR="/vol/bitbucket/jl10525/tmp"
+export XDG_CACHE_HOME="/vol/bitbucket/jl10525/xdg_cache"
 export COQUI_TOS_AGREED=1
-mkdir -p "$TTS_HOME" "$LIBROSA_CACHE_DIR" "$HF_HOME" "$HF_HUB_CACHE" "$HF_ASSETS_CACHE" "$PIP_CACHE_DIR"
+mkdir -p "$TTS_HOME" "$LIBROSA_CACHE_DIR" "$HF_HOME" "$HF_HUB_CACHE" "$HF_ASSETS_CACHE" "$PIP_CACHE_DIR" "$TMPDIR" "$XDG_CACHE_HOME"
 echo "   TTS cache: $TTS_HOME"
 echo "   HF cache:  $HF_HOME"
 
@@ -62,10 +64,14 @@ echo "== Standardizing ML dependencies (transformers, peft, diffusers) and TTS (
 # pip install --upgrade "transformers==4.44.2" "peft==0.12.0" "diffusers==0.30.3" "pydantic<2.0" "edge-tts" "pydub" "insightface>=0.7.3" "onnxruntime-gpu>=1.16.3" --quiet
 
 echo "== Downloading IP-Adapter Plus Models =="
-hf download h94/IP-Adapter sdxl_models/ip-adapter-plus-face_sdxl_vit-h.bin --local-dir models/ip-adapter --cache-dir "$HF_HOME" --quiet
+hf download h94/IP-Adapter sdxl_models/ip-adapter-plus-face_sdxl_vit-h.bin \
+    --local-dir "/vol/bitbucket/jl10525/hf_cache/ip-adapter" \
+    --local-dir-use-symlinks False --quiet
 
 echo "== Downloading ControlNet Canny SDXL (for two-stage generation) =="
-hf download diffusers/controlnet-canny-sdxl-1.0 --local-dir models/controlnet-canny-sdxl --cache-dir "$HF_HOME" --quiet
+hf download diffusers/controlnet-canny-sdxl-1.0 \
+    --local-dir "/vol/bitbucket/jl10525/hf_cache/controlnet-canny-sdxl" \
+    --local-dir-use-symlinks False --quiet
 
 # Ensure opencv-python is available for Canny edge extraction
 echo "== Checking opencv-python =="
