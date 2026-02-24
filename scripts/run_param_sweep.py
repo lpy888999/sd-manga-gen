@@ -80,15 +80,24 @@ def main():
     
     stage1_img.save(output_dir / "debug_stage1_composition.jpg")
     
-    # Extract Canny
+    # Extract Edges for debug
     ts = sd._two_stage_cfg
-    canny_img = sd._make_canny(
-        stage1_img, 
-        ts.get("canny_low_threshold", 75), 
-        ts.get("canny_high_threshold", 175)
-    )
-    canny_img.save(output_dir / "debug_stage1_canny.jpg")
-    logger.info("✅ Stage 1 and Canny debug images saved to output/sweep/")
+    edge_detector = ts.get("edge_detector", "canny").lower()
+    
+    if edge_detector == "hed":
+        logger.info("Extracting HED edges for Stage 1 debug...")
+        control_img = sd._extract_hed(stage1_img)
+        control_img.save(output_dir / "debug_stage1_hed.jpg")
+    else:
+        logger.info("Extracting Canny edges for Stage 1 debug...")
+        control_img = sd._make_canny(
+            stage1_img, 
+            ts.get("canny_low_threshold", 75), 
+            ts.get("canny_high_threshold", 175)
+        )
+        control_img.save(output_dir / "debug_stage1_canny.jpg")
+        
+    logger.info(f"✅ Stage 1 and {edge_detector.upper()} debug images saved to output/sweep/")
 
     # ─── 4. Define the parameter grid to sweep ───
     # X-axis: IP-Adapter Scale (identity constraint)
