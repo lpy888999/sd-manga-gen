@@ -72,6 +72,12 @@ sd:
       canny_low_threshold: 75
       canny_high_threshold: 175
 
+    # Stage 3 Face Restoration (can be enabled independently of two_stage)
+    face_restoration:
+      enabled: true
+      upscale_factor: 1.0     # Final face upscale multiplier
+      strength: 0.5           # Inpainting/blending strength
+
   # Generation parameters
   guidance_scale: 6.0
   num_inference_steps: 35

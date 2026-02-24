@@ -137,11 +137,14 @@ class SDGenerator:
 
         # Extract two-stage config once for convenience
         self._two_stage_cfg: Dict[str, Any] = {}
+        self._face_restoration_cfg: Dict[str, Any] = {}
         if ip_adapter and ip_adapter.get("enable", False):
             self._two_stage_cfg = ip_adapter.get("two_stage", {})
+            self._face_restoration_cfg = ip_adapter.get("face_restoration", {})
 
         self._pipe = None        # lazy-loaded primary t2i pipeline
         self._cn_pipe = None     # lazy-loaded ControlNet i2i pipeline
+        self._restorer = None    # lazy-loaded FaceRestorer
 
     # ── Factory from config dict ─────────────────────────────────────
     @classmethod
@@ -535,6 +538,16 @@ class SDGenerator:
             ).images[0]
 
             logger.info("Stage 2 complete. Panel generated (two-stage).")
+            
+            # STAGE 3: Face Restoration
+            if self._face_restoration_cfg.get("enabled", False):
+                if self._restorer is None:
+                    from .utils.face_restorer import FaceRestorer
+                    self._restorer = FaceRestorer(self._face_restoration_cfg)
+                final_image = self._restorer.restore(
+                    final_image, self._pipe, prompt, negative_prompt
+                )
+                
             return final_image
 
         # ────────────────────────────────────────────────────────────
@@ -546,7 +559,17 @@ class SDGenerator:
             base_kwargs["ip_adapter_image"] = ip_adapter_image
             logger.info(f"Single-stage Text2Img with IP-Adapter (scale={scale})")
             final_image = self._pipe(**base_kwargs).images[0]
-            logger.info("Panel generated (ip_only).")
+            logger.info(f"Panel generated ({mode}).")
+            
+            # STAGE 3: Face Restoration
+            if self._face_restoration_cfg.get("enabled", False):
+                if self._restorer is None:
+                    from .utils.face_restorer import FaceRestorer
+                    self._restorer = FaceRestorer(self._face_restoration_cfg)
+                final_image = self._restorer.restore(
+                    final_image, self._pipe, prompt, negative_prompt
+                )
+                
             return final_image
 
         # ────────────────────────────────────────────────────────────
@@ -559,6 +582,16 @@ class SDGenerator:
             logger.info(f"Single-stage Text2Img ({mode})")
             final_image = self._pipe(**base_kwargs).images[0]
             logger.info(f"Panel generated ({mode}).")
+            
+            # STAGE 3: Face Restoration
+            if self._face_restoration_cfg.get("enabled", False):
+                if self._restorer is None:
+                    from .utils.face_restorer import FaceRestorer
+                    self._restorer = FaceRestorer(self._face_restoration_cfg)
+                final_image = self._restorer.restore(
+                    final_image, self._pipe, prompt, negative_prompt
+                )
+                
             return final_image
 
     # ── Batch generation ─────────────────────────────────────────────
