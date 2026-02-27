@@ -1,58 +1,91 @@
 # 🎨 SDXL Manga Generator
 
-> **Reference Image → LLM Story Expansion → LLM Prompt Engineering → Stable Diffusion + LoRA → Fixed-Layout Comic**
+![Showcase](img/showcase.png)
 
-An end-to-end pipeline that turns a one-line story idea and a character reference image into a complete multi-panel manga page — powered by local LLMs (via Ollama) and Stable Diffusion XL.
+> **Story Expansion → Prompt Engineering → Two-Stage Generation (Identity Fix) → Layout Composer**  
+> _Optional: High-fidelity TTS Voice Branch_
+
+An advanced end-to-end pipeline that turns a one-line story idea and a character reference image into a professional comic page — powered by local LLMs (Ollama) and SDXL with a specialized identity-preserving two-stage workflow.
 
 ```mermaid
-flowchart LR
-    A["📷 Reference Image"] --> B["Character Extractor\n(Vision LLM)"]
-    C["💬 User Prompt"] --> D["Story Expander\n(LLM Step 1)"]
-    B --> E["Prompt Engineer\n(LLM Step 2)"]
+flowchart TD
+    subgraph Input
+        A["📷 Reference Image"]
+        B["💬 User Prompt"]
+    end
+
+    subgraph "Language Layer (Ollama)"
+        C["Story Expander\n(LLM Step 1)"]
+        D["Prompt Engineer\n(LLM Step 2)"]
+    end
+
+    subgraph "Visual Layer (SDXL)"
+        E["SD Generator\n(Stage 1: Composition)"]
+        F["SD Generator\n(Stage 2: Identity)"]
+        G["Layout Composer\n(Grid Assembly)"]
+    end
+
+    subgraph "Voice Branch (Optional)"
+        H["Script Generator"]
+        I["Audio Engine\n(Edge TTS)"]
+    end
+
+    B --> C
+    C --> D
     D --> E
-    E --> F["SD Generator\n(diffusers + LoRA)"]
-    F --> G["Layout Composer\n(PIL)"]
-    G --> H["🖼️ Comic PNG"]
+    E --> F
+    F --> G
+    
+    C --> H
+    H --> I
+    
+    A -.-> D
+    A -.-> F
+    
+    G --> K["🖼️ Comic PNG"]
+    I --> L["🔊 Audio Files"]
+
+    style E fill:#f9f,stroke:#333,stroke-width:2px
+    style F fill:#f9f,stroke:#333,stroke-width:2px
+    style I fill:#bbf,stroke:#333,stroke-width:2px
 ```
 
 ---
 
 ## ✨ Features
 
-- **Two LLM stages** — story expansion → SD prompt engineering, fully automated
-- **Character consistency** — vision LLM extracts features from a reference image, injected into every panel
-- **Drop-in LoRA** — put `.safetensors` in a folder, they load automatically
-- **Fixed layouts** — 4-panel (2×2) or 6-panel (3×2) with comic-style borders
-- **Auto panel count** — determined by prompt length (≤ 30 words → 4, else 6)
-- **Dual interface** — CLI (`main.py`) + Gradio web UI (`app.py` for HuggingFace Spaces)
+- **🚀 Two-Stage Generation** — Solves character identity drift by separating composition (Stage 1) from identity refinement (Stage 2: ControlNet + IP-Adapter).
+- **🎭 Character Consistency** — Combines Reference Images, IP-Adapter (Base/FaceID), and LoRA auto-loading.
+- **👁️ Face Restoration** — Integrated post-processing to ensure sharp, non-distorted character faces.
+- **🎙️ Voice Branch** — Automatically extracts scripts and synthesizes high-quality audio for every panel.
+- **⚡ Prompt Caching** — Save/Load panel prompts to eliminate LLM variance during A/B testing.
+- **🛠️ Drop-in LoRA** — Automatic discovery of `.safetensors` in `loras/` folders.
+- **🧩 Fixed Layouts** — Dynamic 4-panel (2×2) or 6-panel (3×2) grids with comic-style aesthetics.
 
 ---
 
 ## 📁 Project Structure
 
-```
+```text
 sdxl-manga-gen/
-├── app.py                           # Gradio web UI (HF Spaces entry point)
 ├── main.py                          # CLI entry point
-├── config.yaml                      # Models, LoRA, layout, prompts
-├── requirements.txt
-│
-├── models/
-│   └── ollama_model.py              # Lightweight Ollama wrapper (OpenAI-compatible)
+├── app.py                           # Gradio web UI
+├── config.yaml                      # Core pipeline configuration
 │
 ├── pipeline/
-│   ├── character_extractor.py       # Vision LLM → SD character tags
-│   ├── story_expander.py            # User idea → panel narratives (LLM Step 1)
-│   ├── prompt_engineer.py           # Narratives → SD tag prompts (LLM Step 2)
-│   ├── sd_generator.py              # SDXL image generation + LoRA
-│   ├── layout_composer.py           # Panel images → comic grid
-│   └── manga_pipeline.py           # Orchestrator chaining all steps
+│   ├── story_expander.py            # Idea → Panel narratives (LLM 1)
+│   ├── prompt_engineer.py           # Narratives → SD Tags (LLM 2)
+│   ├── sd_generator.py              # Two-stage SDXL + IP-Adapter + ControlNet
+│   ├── script_generator.py          # Narratives → Dialogue scripts (Voice Branch)
+│   ├── audio_engine.py              # Script → Audio files (Edge TTS)
+│   ├── layout_composer.py           # Panel images → Comic grid
+│   └── manga_pipeline.py           # Orchestrator
 │
 ├── loras/
-│   ├── character/                   # ← Drop character LoRA .safetensors here
-│   └── style/                       # ← Drop style LoRA .safetensors here
+│   ├── character/                   # Drop character LoRAs here
+│   └── style/                       # Drop style LoRAs here
 │
-└── output/                          # Generated comics
+└── output/                          # Comics, Logs, and Audio
 ```
 
 ---
@@ -67,171 +100,67 @@ pip install -r requirements.txt
 
 ### 2. Configure
 
-Edit `config.yaml` to set your models and preferences:
+Set your models in `config.yaml`. The pipeline defaults to **DreamShaper XL** and **Ollama**.
 
 ```yaml
 llm:
-  model_name: "qwen3-coder-next:cloud"     # Story & prompt LLM
-  vision_model_name: "gemma3:12b"           # Character extraction (multimodal)
+  model_name: "qwen3:8b"
 
 sd:
-  model_path: "stabilityai/stable-diffusion-xl-base-1.0"
-  lora:
-    character:
-      dir: "loras/character"    # auto-discovers .safetensors
-      weight: 0.8
-    style:
-      dir: "loras/style"
-      weight: 0.6
+  model_path: "Lykon/dreamshaper-xl-1-0"
+  two_stage:
+    enabled: true
+    edge_detector: "hed"  # canny or hed
 ```
 
-### 3. Add LoRA Weights (Optional)
-
-Simply drop `.safetensors` files into the LoRA directories — no code changes needed:
+### 3. Run
 
 ```bash
-cp MyCharacter_v2.safetensors loras/character/
-cp MangaStyle.safetensors     loras/style/
+# Basic run with reference image
+python main.py -r ref.png -p "A samurai fighting a robot in the rain"
+
+# Run with TTS audio and fixed seed
+python main.py -r ref.png -p "Cyberpunk heist" --audio --seed 42
+
+# Use prompt cache to keep LLM results fixed across runs
+python main.py -p "..." --prompt-cache cache.json
 ```
-
-The pipeline auto-discovers and loads them with the weights from `config.yaml`.
-
-### 4. Run
-
-#### CLI
-
-```bash
-# With reference image (auto-extracts character tags via vision LLM)
-python main.py -r character.png -p "A samurai fighting a robot in the rain"
-
-# With manual character tags (skip vision extraction)
-python main.py --character-tags "1boy, silver hair, black coat" \
-               -p "A detective solving a mystery in a dark library" \
-               --panels 6
-
-# Custom output & seed
-python main.py -r ref.png -p "宇宙探险" --seed 42 -o output/space_comic.png
-```
-
-#### Gradio Web UI
-
-```bash
-python app.py
-# → http://localhost:7860
-```
-
-#### HuggingFace Spaces
-
-Push the repo to a HuggingFace Space — `app.py` is auto-detected as the entry point.
 
 ---
 
-## 🔧 Pipeline Stages
+## 🔧 Deep Dive: Two-Stage Pipeline
 
-### Step 0 · Character Feature Extraction
+To achieve high-quality results with consistent characters, we use a specialized **Two-Stage** approach:
 
-| Module | `pipeline/character_extractor.py` |
-|---|---|
-| Input | Reference image (PNG/JPG/WEBP) |
-| Method | Image → base64 → Vision LLM with structured prompt |
-| Output | SD tags: `"1boy, silver hair, round glasses, black trench coat"` |
-| Fallback | `--character-tags` CLI flag bypasses vision extraction |
-
-### Step 1 · Story Expansion (Narrative Architect)
-
-| Module | `pipeline/story_expander.py` |
-|---|---|
-| Input | Brief user prompt + panel count |
-| LLM Role | Professional Comic Scriptwriter |
-| Output | List of panel descriptions (2–3 sentences each) |
-| Auto-detect | ≤ 30 words → 4 panels, > 30 → 6 panels |
-
-### Step 2 · Prompt Engineering (SD Engineer)
-
-| Module | `pipeline/prompt_engineer.py` |
-|---|---|
-| Input | Panel narratives + character tags |
-| LLM Role | Expert SD Prompt Engineer |
-| Output | JSON: `{ panel_number, camera_angle, sd_prompt }` per panel |
-
-**Backend post-processing** (not done by LLM):
-```
-[Trigger Words] + [SD Prompt] + [LoRA Tags] + [Quality Suffix]
-```
-
-### Step 3 · Image Generation
-
-| Module | `pipeline/sd_generator.py` |
-|---|---|
-| Engine | HuggingFace `diffusers` (`StableDiffusionXLPipeline`) |
-| LoRA | Auto-loaded from `loras/` folders via `load_lora_weights()` |
-| Scheduler | DPM++ 2M Multistep |
-| Device | Auto: CUDA → MPS → CPU |
-
-### Step 4 · Layout Composition
-
-| Module | `pipeline/layout_composer.py` |
-|---|---|
-| 4-panel | 2×2 grid |
-| 6-panel | 3×2 grid |
-| Style | Thick black borders + configurable gutters |
+1.  **Stage 1: Composition (Pure LoRA)**  
+    Generates the initial scene layout using text prompts and style LoRAs. Identity scale is set to 0 to prevent IP-Adapter interference with composition.
+2.  **Stage 2: Identity (ControlNet + IP-Adapter)**  
+    Extracts edges (Canny/HED) from Stage 1. Re-runs generation with low denoising and active IP-Adapter to "nudge" the character features toward the reference image.
+3.  **Stage 3: Face Restoration**  
+    Detects faces and performs specialized inpainting to fix distortion.
 
 ---
 
-## ⚙️ Configuration Reference
+## ⚙️ Configuration Reference (`config.yaml`)
 
-All settings live in `config.yaml`:
-
-| Section | Key | Default | Description |
-|---|---|---|---|
-| `llm` | `model_name` | `qwen3-coder-next:cloud` | LLM for story/prompt tasks |
-| `llm` | `vision_model_name` | `gemma3:12b` | Multimodal LLM for character extraction |
-| `sd` | `model_path` | `stabilityai/stable-diffusion-xl-base-1.0` | SD checkpoint (HF ID or local path) |
-| `sd.lora.character` | `dir` / `weight` | `loras/character/` / `0.8` | Character LoRA folder & strength |
-| `sd.lora.style` | `dir` / `weight` | `loras/style/` / `0.6` | Style LoRA folder & strength |
-| `sd` | `guidance_scale` | `7.5` | CFG scale |
-| `sd` | `num_inference_steps` | `30` | Denoising steps |
-| `layout` | `panel_size` | `768×512` | Per-panel resolution |
-| `layout` | `border_width` / `gutter` | `6` / `12` px | Panel border & spacing |
-| `prompt` | `quality_suffix` | `masterpiece, best quality, ...` | Appended to all prompts |
-| `prompt` | `negative_prompt` | `low quality, blurry, ...` | Shared negative prompt |
-
----
-
-## 🏗️ Architecture
-
-### Models Layer (`models/`)
-
-`OllamaChatModel` — a lightweight wrapper around Ollama's OpenAI-compatible API endpoint. No framework dependencies (no LangChain). Supports:
-- Text chat completion
-- Multimodal input (base64 images)
-- `<think>…</think>` reasoning block stripping (Qwen3, etc.)
-
-### Pipeline Layer (`pipeline/`)
-
-Each stage is an independent module with a single-responsibility class. The `MangaPipeline` orchestrator chains them in sequence.
-
-```python
-from pipeline.manga_pipeline import MangaPipeline
-
-pipe = MangaPipeline.from_config("config.yaml")
-pipe.run(
-    reference_image="ref.png",
-    user_prompt="A samurai fighting a robot in the rain",
-    panel_count=4,
-    output_path="output/comic.png",
-    seed=42,
-)
-```
+| Section | Key | Description |
+|---|---|---|
+| `llm` | `model_name` | Ollama model for story/prompting |
+| `sd.ip_adapter` | `type` | `base` or `faceid_plus_v2` |
+| `sd.two_stage` | `enabled` | Toggle identity-preserving two-stage flow |
+| `sd.two_stage` | `edge_detector` | `canny` or `hed` geometry guidance |
+| `sd.face_restoration`| `enabled` | Toggle automated face fixing |
+| `tts` | `enabled` | Toggle automatic voice synthesis |
+| `panels` | `auto_threshold`| Word count before switching 4 -> 6 panels |
 
 ---
 
 ## 📋 Requirements
 
-- Python ≥ 3.10
-- Ollama running locally (or remote via `OLLAMA_BASE_URL`)
-- GPU recommended for SD inference (CUDA or Apple MPS)
-- Models pulled in Ollama (e.g. `ollama pull gemma3:12b`)
+- **Python 3.10+**
+- **Ollama** running locally.
+- **GPU** (NVIDIA CUDA or Apple Silicon MPS).
+- **ControlNet Weights** for SDXL (auto-downloaded or local).
 
 ---
 
