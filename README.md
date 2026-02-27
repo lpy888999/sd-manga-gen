@@ -20,8 +20,9 @@ flowchart TD
     end
 
     subgraph "Visual Layer (SDXL)"
-        E["SD Generator\n(Stage 1: Composition)"]
-        F["SD Generator\n(Stage 2: Identity)"]
+        E["Stage 1: Composition\n(Pure LoRA)"]
+        F["Stage 2: Identity\n(ControlNet + IP-Adapter)"]
+        FX["Stage 3: Face Restoration\n(Inpainting)"]
         G["Layout Composer\n(Grid Assembly)"]
     end
 
@@ -34,19 +35,22 @@ flowchart TD
     C --> D
     D --> E
     E --> F
-    F --> G
+    F --> FX
+    FX --> G
     
     C --> H
     H --> I
     
     A -.-> D
     A -.-> F
+    A -.-> FX
     
     G --> K["🖼️ Comic PNG"]
     I --> L["🔊 Audio Files"]
 
     style E fill:#f9f,stroke:#333,stroke-width:2px
     style F fill:#f9f,stroke:#333,stroke-width:2px
+    style FX fill:#f9f,stroke:#333,stroke-width:2px
     style I fill:#bbf,stroke:#333,stroke-width:2px
 ```
 
