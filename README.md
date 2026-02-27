@@ -22,7 +22,7 @@ flowchart TD
     subgraph "Visual Layer (SDXL)"
         E["Stage 1: Composition\n(Pure LoRA)"]
         F["Stage 2: Identity\n(ControlNet + IP-Adapter)"]
-        FX["Stage 3: Face Restoration\n(Inpainting)"]
+        FX["Stage 3: Face Restoration\n(Refined Identity)"]
         G["Layout Composer\n(Grid Assembly)"]
     end
 
@@ -41,9 +41,10 @@ flowchart TD
     C --> H
     H --> I
     
-    A -.-> D
-    A -.-> F
-    A -.-> FX
+    A -. "Decoupling Info" .-> C
+    A -. "Decoupling Info" .-> D
+    A -. "Identity Input" .-> F
+    A -. "Identity Input" .-> FX
     
     G --> K["🖼️ Comic PNG"]
     I --> L["🔊 Audio Files"]
